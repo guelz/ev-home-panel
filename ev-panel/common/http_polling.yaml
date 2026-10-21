@@ -1,0 +1,50 @@
+# EV-Panel — HTTP client + asset/UI intervals.
+# http_request is kept for online_image asset loading (NOT for polling — all
+# wallbox/vehicle data arrives via the HA native API since the HA-as-hub
+# migration).
+
+http_request:
+  useragent: ev-panel/1.0
+  timeout: 5s
+  verify_ssl: false
+  # CRITICAL for online_image: esp_http_client_read() can block up to `timeout`
+  # (5 s) waiting for data while fetching the image bodies. http_request only
+  # extends the task watchdog during that block if watchdog_timeout > 0 — the
+  # default is 0 (a no-op WatchdogManager), so a blocking read trips the 5 s task
+  # WDT → reboot loop → OTA rollback. 30 s gives blocking reads ample headroom.
+  watchdog_timeout: 30s
+
+interval:
+  # Phase 2: load online_image assets. startup_delay clears the ~30 s STP
+  # forwarding window after link-up (early connects fail: ESP_ERR_HTTP_CONNECT).
+  # Retries every 30 s — load_assets only fetches not-yet-loaded images — until
+  # refresh_after_assets confirms all are in (assets_loaded), then no-ops.
+  - interval: 30s
+    startup_delay: 35s
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(assets_loaded);'
+          then:
+            - script.execute: load_assets
+
+  # Phase 4b: drive the energy-page flow-line LED chase.
+  - interval: 100ms
+    then:
+      - script.execute: chase_leds
+
+  # EV blink: pulse wb_icon opacity while unplugged AND SOC below the blink
+  # threshold (ev_blink_active set by render_wallbox). No-op otherwise.
+  - interval: 500ms
+    then:
+      - lambda: |-
+          if (!id(ev_blink_active)) return;
+          static bool dim = false; dim = !dim;
+          lv_obj_set_style_opa(id(wb_icon), dim ? 60 : LV_OPA_COVER, 0);
+
+  # evcc statusbar dot: periodic repaint — the on_state hook alone misses the
+  # boot-time initial state when the HA entity hasn't changed recently.
+  - interval: 60s
+    startup_delay: 20s
+    then:
+      - script.execute: refresh_evcc_dot

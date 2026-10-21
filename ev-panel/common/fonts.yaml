@@ -1,0 +1,91 @@
+# EV-Panel — fonts
+# Roboto (sans, gfonts) for labels + Crimson Pro (display serif, local TTFs).
+# Glyph sets are restricted on number-only fonts so the resulting font binaries
+# stay small (full ASCII+umlauts adds ~30 KB per size).
+#
+# Required substitutions:
+#   ${default_glyphs}  — full glyph set incl. umlauts      (ev-panel/texts_de.yaml)
+#   ${glyphs_kw}       — kW numbers on the energy page      (ev-panel/texts_de.yaml)
+#   ${glyphs_wb_power} — wallbox charging badges             (ev-panel/texts_de.yaml)
+# All three live next to the texts they must cover, so a translation updates them too.
+#
+# Crimson Pro TTFs are expected at  _fonts/CrimsonPro-Bold.ttf  and
+# _fonts/CrimsonPro-MediumItalic.ttf  relative to the ESPHome config dir.
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_label
+    size: 18
+    bpp: 4
+    glyphs: ${default_glyphs}
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: bold
+    id: font_section_title
+    size: 16
+    bpp: 4
+    glyphs: ${default_glyphs}
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: bold
+    id: font_status
+    size: 30
+    bpp: 4
+    glyphs: ${default_glyphs}
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: bold
+    id: font_button_2line
+    size: 26                       # two-line button labels in the 80 px top strip
+    bpp: 4
+    glyphs: ${default_glyphs}
+
+  # ─── Crimson Pro — display serif ─────────────────────────────────────────
+  - file: _fonts/CrimsonPro-Bold.ttf
+    id: font_crimson_status
+    size: 60                       # wallbox status verb
+    bpp: 4
+    glyphs: ${default_glyphs}
+  - file: _fonts/CrimsonPro-Bold.ttf
+    id: font_crimson_pct
+    size: 110                      # SOC big number
+    bpp: 4
+    glyphs: "0123456789"
+  - file: _fonts/CrimsonPro-Bold.ttf
+    id: font_crimson_pct_unit
+    size: 40                       # "%" suffix
+    bpp: 4
+    glyphs: "%"
+  - file: _fonts/CrimsonPro-Bold.ttf
+    id: font_crimson_range
+    size: 88                       # range km big number
+    bpp: 4
+    glyphs: "0123456789"
+  - file: _fonts/CrimsonPro-Bold.ttf
+    id: font_crimson_kw
+    size: 32                       # energy-page centre power "-X.X kW" + Eigenverbrauchsanteil "%"
+    bpp: 4
+    glyphs: ${glyphs_kw}
+  - file: _fonts/CrimsonPro-Bold.ttf
+    id: font_crimson_wb_power
+    size: 36                       # wallbox charging badges "X.X kW Netz" / "X.X kW PV" — readable from a distance
+    bpp: 4
+    glyphs: ${glyphs_wb_power}
+  - file: _fonts/CrimsonPro-MediumItalic.ttf
+    id: font_crimson_meta_large
+    size: 32                       # italic captions
+    bpp: 4
+    glyphs: ${default_glyphs}
+  - file: _fonts/CrimsonPro-MediumItalic.ttf
+    id: font_crimson_meta
+    size: 26                       # italic captions
+    bpp: 4
+    glyphs: ${default_glyphs}
+  - file: _fonts/CrimsonPro-MediumItalic.ttf
+    id: font_crimson_clock
+    size: 22                       # statusbar italic clock
+    bpp: 4
+    glyphs: ${default_glyphs}

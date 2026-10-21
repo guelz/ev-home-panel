@@ -1,0 +1,59 @@
+# EV-Panel — HA-exposed controls (template numbers/switches).
+# NOTE: every device config that includes scripts_ui MUST also include this
+# (wake_display reads id(max_brightness)).
+number:
+  # Day wake brightness. NB: this panel's backlight is effectively OFF below ~30%,
+  # so min_value is clamped to 30 to keep the whole slider in the visible range.
+  - platform: template
+    id: max_brightness
+    name: "${device_friendly} Max Brightness"
+    optimistic: true
+    restore_value: true
+    initial_value: 50
+    min_value: 30
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    mode: slider
+
+  # Night-time wake brightness — used by wake_display when sun.sun is
+  # below_horizon (see ha_entities.yaml sun_state + scripts_ui.yaml wake_display).
+  # Same ~30% dead-zone floor as the day slider.
+  - platform: template
+    id: night_max_brightness
+    name: "${device_friendly} Night Max Brightness"
+    optimistic: true
+    restore_value: true
+    initial_value: 30
+    min_value: 30
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    mode: slider
+
+  # ─── SHT41 calibration offsets ───────────────────────────────────────────
+  # Added to the raw SHT41 reading via a lambda filter on the sensor (device
+  # YAML). Corrects placement bias (e.g. panel self-heating). Applies on the
+  # next sensor reading (≤30 s), not instantly.
+  - platform: template
+    id: temp_offset
+    name: "${device_friendly} Temperatur Offset"
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: -10
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: "°C"
+    mode: slider
+  - platform: template
+    id: humidity_offset
+    name: "${device_friendly} Luftfeuchtigkeit Offset"
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: -20
+    max_value: 20
+    step: 0.5
+    unit_of_measurement: "%"
+    mode: slider

@@ -1,0 +1,12 @@
+# EV-Panel — audio stub for boards WITHOUT an ES8311 speaker chain.
+# Provides no-op beep_click/beep_warn so shared modules
+# compile unchanged. Include EITHER this OR audio.yaml, never both.
+script:
+  - id: beep_click
+    mode: restart
+    then:
+      - logger.log: { format: "[audio-stub] beep_click", level: VERBOSE }
+  - id: beep_warn
+    mode: restart
+    then:
+      - logger.log: { format: "[audio-stub] beep_warn", level: VERBOSE }

@@ -1,0 +1,20 @@
+# EV-Panel — per-page loading spinner. Centered gray spinner shown while the
+# online_image assets download; hidden once assets_loaded (per device YAML).
+# Included once per page with a unique id:
+#   !include { file: ../ev-panel/sections/loading_spinner.yaml, vars: { spin_id: spin_main } }
+# ignore_layout keeps it floating-centered even on the FLEX main page.
+spinner:
+  id: ${spin_id}
+  align: CENTER
+  ignore_layout: true
+  width: 84
+  height: 84
+  spin_time: 1200ms
+  arc_length: 75deg
+  bg_opa: TRANSP
+  border_width: 0
+  arc_color: $ink_faint      # faint track
+  arc_width: 8
+  indicator:
+    arc_color: $ink_mute     # gray moving arc
+    arc_width: 8

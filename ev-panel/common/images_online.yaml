@@ -1,0 +1,90 @@
+# EV-Panel — image assets via online_image (Phase 2).
+# Fetched at runtime over HTTP from HA www/ (no flash cost). Same id / type
+# RGB565 / alpha_channel as the old flash images; file -> url.
+#
+# `image:` with `platform: online_image` per entry since ESPHome 2026.x — the
+# top-level `online_image:` block is deprecated and goes away in 2027.1.0.
+# This list merges with the `platform: file` placeholder in images_placeholder.yaml.
+# byte_order omitted (default big-endian) to match the old flash images exactly.
+#
+# Source PNGs are exported from inkscape_icons/ev_panel_icons at their intended
+# display size, so NO resize: — they decode 1:1 (fast; the old 512²/1024² sources
+# took 8–11 s each to decode-then-downscale on the P4).
+#
+# Required substitutions:
+#   ${asset_base}                  — http://<ha>:8123/local/ev-panel/icons
+#   ${vehicle_watermark_filename}  — per-vehicle silhouette PNG
+#
+# Downloads are driven by load_assets (retrying interval, http_polling.yaml);
+# on_download_finished schedules refresh_after_assets to repaint LVGL.
+#
+# buffer_size: 2048 (default 65536) keeps each decode chunk small so a big image
+# can't block one loop() iteration; watchdog_timeout on http_request covers the
+# blocking HTTP read (see http_polling.yaml).
+
+image:
+  # ── Section watermarks ──
+  - { platform: online_image, id: img_wallbox_bg, url: "${asset_base}/wallbox_watermark.png",         format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_vehicle_bg, url: "${asset_base}/${vehicle_watermark_filename}", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Wallbox state machine (4 states) ──
+  - { platform: online_image, id: img_unplugged,        url: "${asset_base}/unplugged.png",            format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_waiting,          url: "${asset_base}/waiting_for_surplus.png",  format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_plugged_in,       url: "${asset_base}/plugged-in.png",           format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_surplus_charging, url: "${asset_base}/surplus_charging.png",     format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  # idle = unplugged but EV SOC above threshold (no need to charge)
+  - { platform: online_image, id: img_idle,             url: "${asset_base}/idle.png",                 format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Battery 4-state set (chosen by SOC bucket in render_vehicle) ──
+  - { platform: online_image, id: img_battery_25,  url: "${asset_base}/battery_25.png",  format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_battery_50,  url: "${asset_base}/battery_50.png",  format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_battery_75,  url: "${asset_base}/battery_75.png",  format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_battery_100, url: "${asset_base}/battery_100.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Range icon ──
+  - { platform: online_image, id: img_range, url: "${asset_base}/range.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Climate buttons ──
+  - { platform: online_image, id: img_precooling, url: "${asset_base}/precooling.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_preheating, url: "${asset_base}/preheating.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Energy-page node icons (faint watermarks behind the arcs) — resize ≈100px tall ──
+  - { platform: online_image, id: img_node_pv,    url: "${asset_base}/pv_panels.png", format: PNG, type: RGB565, transparency: alpha_channel, resize: 104x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_node_grid,  url: "${asset_base}/grid.png",      format: PNG, type: RGB565, transparency: alpha_channel, resize: 65x100,  buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_node_house, url: "${asset_base}/house.png",     format: PNG, type: RGB565, transparency: alpha_channel, resize: 116x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_node_hp,    url: "${asset_base}/heat_pump.png", format: PNG, type: RGB565, transparency: alpha_channel, resize: 96x100,  buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_node_ev,    url: "${asset_base}/wallbox.png",   format: PNG, type: RGB565, transparency: alpha_channel, resize: 106x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  # PV-Akku 5-state (SOC-picked in render_energy)
+  - { platform: online_image, id: img_pv_battery_empty, url: "${asset_base}/pv_battery_empty.png", format: PNG, type: RGB565, transparency: alpha_channel, resize: 70x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_pv_battery_25,    url: "${asset_base}/pv_battery_25.png",    format: PNG, type: RGB565, transparency: alpha_channel, resize: 70x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_pv_battery_50,    url: "${asset_base}/pv_battery_50.png",    format: PNG, type: RGB565, transparency: alpha_channel, resize: 70x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_pv_battery_75,    url: "${asset_base}/pv_battery_75.png",    format: PNG, type: RGB565, transparency: alpha_channel, resize: 70x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_pv_battery_100,   url: "${asset_base}/pv_battery_100.png",   format: PNG, type: RGB565, transparency: alpha_channel, resize: 70x100, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Cistern page (page 3) — tank + blue waterline, both RGB565 ──
+  # Tank was GRAYSCALE per the line-art policy, but the detailed drawing renders
+  # muddy on the cream paper (luminance-only loses the crisp black lines).
+  # RGB565+alpha keeps the original tones; buffer cost is trivial (32 MB PSRAM).
+  - { platform: online_image, id: img_cistern_bg,        url: "${asset_base}/cistern.png",           format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_cistern_waterline, url: "${asset_base}/cistern_waterline.png", format: PNG, type: RGB565,    transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Weather page (page 3) — 15 forecast condition icons (RGB565), swapped by refresh_weather ──
+  - { platform: online_image, id: img_wx_clear_night, url: "${asset_base}/wx_clear_night.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_cloudy, url: "${asset_base}/wx_cloudy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_exceptional, url: "${asset_base}/wx_exceptional.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_fog, url: "${asset_base}/wx_fog.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_hail, url: "${asset_base}/wx_hail.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_lightning_rainy, url: "${asset_base}/wx_lightning_rainy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_lightning, url: "${asset_base}/wx_lightning.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_partlycloudy, url: "${asset_base}/wx_partlycloudy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_pouring, url: "${asset_base}/wx_pouring.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_rainy, url: "${asset_base}/wx_rainy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_snowy_rainy, url: "${asset_base}/wx_snowy_rainy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_snowy, url: "${asset_base}/wx_snowy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_sunny, url: "${asset_base}/wx_sunny.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_windy_variant, url: "${asset_base}/wx_windy_variant.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_wx_windy, url: "${asset_base}/wx_windy.png", format: PNG, type: RGB565, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+
+  # ── Lock button (GRAYSCALE line art, swapped by render_lock) ──
+  - { platform: online_image, id: img_lock_closed, url: "${asset_base}/lock_closed.png", format: PNG, type: GRAYSCALE, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }
+  - { platform: online_image, id: img_lock_open,   url: "${asset_base}/lock_open.png",   format: PNG, type: GRAYSCALE, transparency: alpha_channel, buffer_size: 2048, update_interval: never, on_download_finished: { then: [ script.execute: refresh_after_assets ] } }

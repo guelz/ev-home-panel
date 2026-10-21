@@ -1,0 +1,47 @@
+# EV-Panel — §Cistern (page 3, LOWER half y 640–1220; statusbar below).
+# Port of the old cistern page per the multipage spec §5.3 tweaks:
+#   - big % moved ONTO the tank (was stranded at the page bottom)
+#   - Füllstand litres italic under the tank, plus Verbrauch/Pumpe/letzter-Regen rows
+# The waterline is positioned RELATIVE TO ci_tank by render_cistern: its top-left
+# is interpolated piecewise-linearly between three offsets from the tank's
+# top-left (100 %, 50 %, 0 %). Move the tank → waterline follows.
+#
+# Substitutions consumed (define in device YAML), px from the tank's top-left:
+#   - cistern_wl_100_x / cistern_wl_100_y   (full)
+#   - cistern_wl_50_x  / cistern_wl_50_y
+#   - cistern_wl_0_x   / cistern_wl_0_y     (empty)
+obj:
+  id: sec_cistern
+  x: 0
+  y: 640
+  width: 100%
+  height: 580
+  bg_opa: TRANSP
+  border_width: 0
+  scrollable: false
+  pad_all: 0
+  widgets:
+    - label:
+        text: "$txt_ci_title"
+        align: TOP_MID
+        y: 30
+        text_font: font_section_title
+        text_color: $ink_mute
+        text_letter_space: 4
+
+    # Tank line drawing (cistern.png 600×481) + waterline overlay (360×72).
+    # ci_waterline x/y below are initial-paint only — render_cistern re-anchors it
+    # to ci_tank every update (three-point interpolation). Move ci_tank freely.
+    - image: { id: ci_tank,      src: img_loading, x: 100, y: 40, opa: 92%, bg_opa: TRANSP, border_width: 0 }
+    - image: { id: ci_waterline, src: img_loading, x: 230, y: 195, opa: 65%, bg_opa: TRANSP, border_width: 0 }
+
+    # Big percentage — on the tank (spec §5.3 tweak)
+    - label: { id: ci_pct, align: TOP_MID, y: 250, text: "—", text_font: font_crimson_status, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+
+    # Füllstand litres under the tank
+    - label: { id: ci_liters, align: TOP_MID, y: 330, text: "—", text_font: font_crimson_meta_large, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # Info rows: Verbrauch heute (left) · Pumpe (right) · letzter Regen (centered)
+    - label: { id: ci_usage, x: 60,  y: 520, text: "$txt_ci_usage_initial", text_font: font_label, text_color: $ink_mute, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ci_pump,  align: TOP_RIGHT, x: -60, y: 520, text: "$txt_ci_pump_initial", text_font: font_label, text_color: $ink_mute, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ci_rain,  align: TOP_MID, y: 520, text: "$txt_ci_rain_initial", text_font: font_label, text_color: $ink_mute, bg_opa: TRANSP, border_width: 0 }

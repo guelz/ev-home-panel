@@ -1,0 +1,57 @@
+# EV-Panel — settings popup (sections/settings_popup.yaml): open/close, 30 s
+# auto-close, and the two "Laden im Normalbetrieb" options, which set evcc's
+# "Dauerhaft laden" via HA. State source: always_s (ha_entities.yaml).
+#
+# Required substitutions: ${ha_wb_always_charge_select}, ${evcc_always_off},
+#   ${evcc_always_on}.
+
+script:
+  - id: open_settings
+    then:
+      - script.execute: beep_click
+      - lambda: 'lv_obj_clear_flag(id(settings_overlay), LV_OBJ_FLAG_HIDDEN);'
+      - script.execute: render_settings
+      - script.execute: settings_autoclose
+
+  - id: close_settings
+    then:
+      - script.stop: settings_autoclose
+      - lambda: 'lv_obj_add_flag(id(settings_overlay), LV_OBJ_FLAG_HIDDEN);'
+
+  # Restarted by every tap in the popup; 30 s of nothing → close.
+  - id: settings_autoclose
+    mode: restart
+    then:
+      - delay: 30s
+      - lambda: 'lv_obj_add_flag(id(settings_overlay), LV_OBJ_FLAG_HIDDEN);'
+
+  # Green border on the option evcc reports; "bis Ladeende" (only settable in
+  # evcc itself) or no state → neither is green.
+  - id: render_settings
+    then:
+      - lambda: |-
+          std::string v = id(always_s).has_state() ? id(always_s).state : "";
+          lv_obj_set_style_border_color(id(always_off_btn),
+            lv_color_hex(v == "${evcc_always_off}" ? $ok_green : $ink), 0);
+          lv_obj_set_style_border_color(id(always_on_btn),
+            lv_color_hex(v == "${evcc_always_on}" ? $ok_green : $ink), 0);
+
+  - id: tap_always_off
+    then:
+      - script.execute: beep_click
+      - homeassistant.action:
+          action: select.select_option
+          data:
+            entity_id: ${ha_wb_always_charge_select}
+            option: "${evcc_always_off}"
+      - script.execute: settings_autoclose
+
+  - id: tap_always_on
+    then:
+      - script.execute: beep_click
+      - homeassistant.action:
+          action: select.select_option
+          data:
+            entity_id: ${ha_wb_always_charge_select}
+            option: "${evcc_always_on}"
+      - script.execute: settings_autoclose

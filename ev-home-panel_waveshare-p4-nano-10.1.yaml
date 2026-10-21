@@ -1,0 +1,702 @@
+# =============================================================================
+# EV-Panel — Waveshare ESP32-P4-NANO + 10.1" DSI panel + LD2412 (the author's wall panel)
+# =============================================================================
+# Hardware: ESP32-P4 ECO2 (rev1.3), Waveshare 10.1" DSI-TOUCH-B, HLK-LD2412 mmWave.
+# Universal IDs:  ev_display, ev_touchscreen, backlight  (so the shared package
+# code is hardware-agnostic).
+#
+# Common bits live in ev-panel/common/ (loaded via packages:) and ev-panel/sections/
+# (loaded via !include inside the lvgl widgets list).
+# =============================================================================
+
+substitutions:
+  # All visible texts + their glyph sets. Translate by swapping this file.
+  <<: !include ev-panel/texts_de.yaml
+  name: ev-panel-niro
+  device_friendly: EV Panel — Niro
+
+  # ═══ HA entities — everything this panel reads or writes ═══════════════════
+  # Grouped by type, then in screen order (page 1 → 3, statusbar last).
+  # ── sensor ──────────────────────────────────────────────────────────────────
+  # Ladeplan target (evcc effectivePlanSoc via HA bridge) — > 0 = plan active.
+  ha_plan_soc: sensor.evcc_ladeplan_ziel
+  # Wallbox charging power — the Warp3's own meter, in W (all consumers /1000).
+  ha_wb_power: sensor.warp3_2iw7_powernow
+  # evcc solar share of the loadpoints (%, HA bridge) — splits the badge into Netz/PV.
+  ha_wb_green_share: sensor.evcc_solaranteil_ladepunkte
+  # Native Kia range (km). Replaces the old @16kWh/100km template estimate.
+  ha_range_sensor: sensor.niro_ev_range
+  # SOC = EV TRACTION battery (sensor.niro_ev_battery_level, ~77%).
+  # NOT sensor.niro_car_battery_level — that's the 12 V aux battery (~90%).
+  ha_soc_sensor: sensor.niro_ev_battery_level
+  # Energy page: arc power in W ...
+  ha_en_pv_power: sensor.dash_pv_input_power
+  ha_en_house_power: sensor.dash_house_consumption
+  # WP + Boiler — Shelly Pro 3EM channel 0 ALONE (single-phase, don't sum 0/1/2).
+  ha_en_wp_power: sensor.heizungsraum_wp_und_boiler_energy_meter_0_power
+  ha_en_grid_import_power: sensor.dash_grid_import_power
+  ha_en_grid_export_power: sensor.dash_grid_export_power
+  ha_en_batt_charge_power: sensor.dash_battery_charge_power
+  ha_en_batt_discharge_power: sensor.dash_battery_discharge_power
+  ha_en_batt_soc: sensor.batteries_state_of_capacity
+  # ... per-line power for the LED chase (W) ...
+  ha_en_line_pv_house: sensor.dash_pv_to_house
+  ha_en_line_pv_grid: sensor.dash_pv_to_grid
+  ha_en_line_pv_batt: sensor.dash_pv_to_batteries
+  ha_en_line_grid_house: sensor.dash_grid_to_house
+  ha_en_line_grid_batt: sensor.dash_grid_to_batteries
+  ha_en_line_batt_house: sensor.dash_battery_to_house
+  # ... "Strom heute" table: daily energy (kWh) + prices (CHF/kWh).
+  ha_en_pv_daily: sensor.dash_pv_input_energy_daily
+  ha_en_batt_in_daily: sensor.dash_battery_charge_energy_daily
+  ha_en_batt_out_daily: sensor.dash_battery_discharge_energy_daily
+  ha_en_grid_in_daily: sensor.dash_grid_import_energy_daily
+  ha_en_grid_out_daily: sensor.dash_grid_export_energy_daily
+  ha_en_house_daily: sensor.dash_house_consumption_energy_daily
+  # YAML utility_meter on the Shelly ch0 hardware counter (utility_meter/waermepumpe.yaml).
+  # NOT sensor.wp_und_boiler_daily_energy — that old UI helper counts a vanished source, stays 0.
+  ha_en_wp_daily: sensor.daily_energy_warmepumpe
+  # EV charged today — evcc (Warp3 meter), not the old Kia-cloud integral template.
+  ha_en_ev_daily: sensor.evcc_heute_geladen
+  ha_en_price_import: sensor.dash_price_import
+  ha_en_price_export: sensor.dash_price_export
+  # Weather page: 5-day forecast highs/lows (HA templates ev_panel_weather.yaml).
+  ha_we_d0_high: sensor.evp_weather_d0_high
+  ha_we_d0_low: sensor.evp_weather_d0_low
+  ha_we_d1_high: sensor.evp_weather_d1_high
+  ha_we_d1_low: sensor.evp_weather_d1_low
+  ha_we_d2_high: sensor.evp_weather_d2_high
+  ha_we_d2_low: sensor.evp_weather_d2_low
+  ha_we_d3_high: sensor.evp_weather_d3_high
+  ha_we_d3_low: sensor.evp_weather_d3_low
+  ha_we_d4_high: sensor.evp_weather_d4_high
+  ha_we_d4_low: sensor.evp_weather_d4_low
+  # Cistern: fill %, volume m³, daily usage m³.
+  ha_ci_fill: sensor.cistern_controller_zisterne_fill
+  ha_ci_m3: sensor.cistern_controller_zisterne_m3
+  ha_ci_usage: sensor.cistern_controller_zisterne_daily_usage
+  # ── binary_sensor ───────────────────────────────────────────────────────────
+  ha_wb_cable: binary_sensor.warp3_2iw7_cable
+  ha_wb_charging: binary_sensor.warp3_2iw7_charging
+  ha_wb_error: binary_sensor.warp3_2iw7_error
+  ha_ci_pump: binary_sensor.cistern_controller_pumpe_lauft
+  # evcc reachable (LWT evcc/status, HA bridge) — statusbar "evcc" dot.
+  ha_statusbar_evcc_online: binary_sensor.evcc_online
+  # ── select / lock / sun / text (read as text_sensor) ───────────────────────
+  # evcc charge mode (HA bridge packages/evcc_wallbox.yaml). Also written by the
+  # Schnellladen button.
+  ha_wb_mode_select: select.evcc_lademodus
+  # Must match the options of select.evcc_lademodus (HA bridge) exactly.
+  evcc_mode_off: "Aus"
+  evcc_mode_smart: "Smart"
+  evcc_mode_now: "Schnell"
+  # evcc "Dauerhaft laden" — settings popup (gear on the wallbox card).
+  # Options must match select.evcc_dauerhaft_laden (HA bridge) exactly.
+  ha_wb_always_charge_select: select.evcc_dauerhaft_laden
+  evcc_always_off: "Aus"
+  evcc_always_on: "Ein"
+  ha_lock_entity: lock.niro_door_lock
+  ha_we_d0_cond: sensor.evp_weather_d0_cond
+  ha_we_d1_cond: sensor.evp_weather_d1_cond
+  ha_we_d2_cond: sensor.evp_weather_d2_cond
+  ha_we_d3_cond: sensor.evp_weather_d3_cond
+  ha_we_d4_cond: sensor.evp_weather_d4_cond
+  ha_ci_rain_text: sensor.evp_letzter_regen_text
+  # Not on screen: above/below horizon picks day vs night backlight brightness.
+  ha_sun: sun.sun
+  # ── input_number ────────────────────────────────────────────────────────────
+  # Unplugged + SOC ≥ idle → calm idle; < idle → red warning; < blink → blinks.
+  ha_wb_idle_soc_threshold: input_number.ev_idle_soc_threshold
+  ha_wb_blink_soc_threshold: input_number.ev_blink_soc_threshold
+  # ── write-only (homeassistant.action targets) ───────────────────────────────
+  ha_lock_windows_open_button: button.parkplatz_niro_open_all_windows
+  ha_lock_windows_close_button: button.parkplatz_niro_close_all_windows
+  ha_climate_entity: climate.niro_climate_control
+  # "Bis morgen früh voll laden": HA script that sets (soc > 0) or deletes
+  # (soc 0) the evcc charge plan — it holds the evcc vehicle name and computes
+  # the next occurrence of the time. Target and time as in the evcc dialog.
+  ha_plan_script: script.evcc_ladeplan_bis_morgen
+  plan_target_soc: "90"
+  plan_target_time: "07:00"
+
+  dim_timeout_s: "60"
+
+  # ─── Local climate sensors (bus_b) ───────────────────────────────────────
+  sensors_sda: GPIO22        # P1 pin 14 (ADC1_CH6) — plain GPIO, fine for I²C SDA
+  sensors_scl: GPIO33        # P1 pin 22 — plain GPIO. NB: GPIO24 (the obvious next
+                             # pin) is USB1P1_N0, a USB-host data line → can't drive
+                             # I²C SCL; using it scanned "no devices".
+  scd40_altitude_m: "430"    # CO₂ altitude compensation — your installation altitude in m
+  co2_warn_ppm: "1400"       # air banner ON >1400 ppm, OFF <1300 (−100 hysteresis)
+  humidity_warn_pct: "70"    # air banner ON >=70 %, OFF <68 % (−2 hysteresis)
+
+  # ─── Vehicle-specific UI ────────────────────────────────────────────────
+  vehicle_section_title: "NIRO EV"
+  vehicle_watermark_filename: "Kia_Niro_EV_watermark.png"
+
+  # ─── Asset path ─────────────────────────────────────────────────────────
+  # Point this at wherever the PNGs live, relative to /config/esphome/.
+  # Default for new installs: ev-panel/icons.  Existing setups: ev-panel/icons.
+  icons_path: ev-panel/icons
+
+  # ─── online_image asset host (Phase 2) ──────────────────────────────────
+  # HA (port 8123) serves /config/www/ at /local/. PNGs live in www/ev-panel/icons/.
+  # LAN HTTP, no TLS. Use an address of HA the panel can reach directly
+  # (e.g. "http://192.168.1.10:8123/local/ev-panel/icons") — set it in secrets.yaml.
+  asset_base: !secret ev_panel_asset_base
+
+  # ─── Cistern waterline (page 3) — three points, px from the tank's top-left ─
+  # render_cistern places the waterline image's top-left at these offsets from
+  # ci_tank's top-left and interpolates linearly 100→50 % and 50→0 %. Tune on the
+  # device. Starting values = the old auto-centred position: x (600−360)/2 + 10.
+  cistern_wl_100_x: "130"   # full
+  cistern_wl_100_y: "155"
+  cistern_wl_50_x:  "130"
+  cistern_wl_50_y:  "278"
+  cistern_wl_0_x:   "130"   # empty
+  cistern_wl_0_y:   "400"
+
+
+  # ─── Color palette — single source of truth (mockup-portrait-v2.html) ────
+  paper:        "0xf4ecdf"   # warm cream — main background
+  paper_tint:   "0xecdfca"   # slightly deeper, for alt bands (climate strip)
+  paper_edge:   "0xd8c9ae"   # hairline rules between sections
+  ink:          "0x1a1a1a"   # primary text
+  ink_soft:     "0x4a3f2e"   # secondary text — warm
+  ink_mute:     "0x8a7d68"   # tertiary / labels — warm grey
+  ink_faint:    "0xbfb5a3"   # off / muted state
+  warn_red:     "0xa81d1d"   # warnings (deep ink-red, not neon)
+  ok_green:     "0x04B503"   # universal green
+
+# =============================================================================
+# EV-Panel shared packages — fonts/images/globals/scripts/HA-entities/polling
+# =============================================================================
+packages:
+  #wifi_ota_api: !include common/wifi_ota_api.yaml
+  ev_panel.fonts:          !include ev-panel/common/fonts.yaml
+  ev_panel.placeholder:    !include ev-panel/common/images_placeholder.yaml
+  ev_panel.images:         !include ev-panel/common/images_online.yaml
+  ev_panel.globals:        !include ev-panel/common/globals.yaml
+  ev_panel.ha_entities:    !include ev-panel/common/ha_entities.yaml
+  ev_panel.http_polling:   !include ev-panel/common/http_polling.yaml
+  ev_panel.scripts_ui:     !include ev-panel/common/scripts_ui.yaml
+  ev_panel.scripts_render: !include ev-panel/common/scripts_render.yaml
+  ev_panel.scripts_lock:   !include ev-panel/common/scripts_lock.yaml
+  ev_panel.scripts_charge_now: !include ev-panel/common/scripts_charge_now.yaml
+  ev_panel.scripts_settings: !include ev-panel/common/scripts_settings.yaml
+  ev_panel.controls:       !include ev-panel/common/controls.yaml
+  ev_panel.audio:          !include ev-panel/common/audio.yaml
+
+# =============================================================================
+# Hardware — ESP32-P4 ECO2 / Waveshare ESP32-P4-NANO / 10.1" DSI panel
+# =============================================================================
+# DO NOT TOUCH! (unless you really have to, then it's ok!)
+# Each setting is required for ESP32-P4 ECO2 silicon (rev1.3) on this board.
+# Removing or "simplifying" any of them tends to brick the boot at the
+# second-stage bootloader.
+#   - engineering_sample: true  → required since ESPHome 2026.3.0 (PR #14139)
+#                                  for any pre-rev-3 silicon (our chip is rev1.3)
+#   - psram.mode: hex           → ESP32-P4 only supports hex (16-line) PSRAM
+#   - psram.speed: 200MHz       → gated behind enable_idf_experimental_features
+#   - esp_ldo channel 3 @ 2.5V  → powers in-package PSRAM/MIPI rail
+#   - cpu_frequency: 360MHz     → 400MHz is experimental on P4 (PR #13433)
+#   - logger UART0              → USB-C is a CH343P USB↔UART bridge on UART0
+#                                (GPIO37/38). USB_SERIAL_JTAG routes to the native
+#                                USB pins = USB-A port (J2), NOT the USB-C, so JTAG
+#                                logs never reach the debug cable. (#15724 was wrong.)
+esphome:
+  name: ${name}
+  friendly_name: ${device_friendly}
+  name_add_mac_suffix: false
+  on_boot:
+    # Priority 850: AFTER i2c bus init (900) but BEFORE display init (~250).
+    # Wakes the Waveshare 10.1" panel PMIC at I²C 0x45 so DSI doesn't hang on boot.
+    # Reference: https://github.com/esphome/esphome/issues/15564
+    - priority: 850
+      then:
+        - logger.log: "[panel] running I²C wake sequence on chip 0x45"
+        - lambda: |-
+            id(panel_pmic).write_byte(0x95, 0x11);
+            id(panel_pmic).write_byte(0x95, 0x17);
+            id(panel_pmic).write_byte(0x96, 0x00);
+        - delay: 100ms
+        - lambda: |-
+            id(panel_pmic).write_byte(0x96, 0xFF);   // backlight to full
+        - delay: 300ms
+        - logger.log: "[panel] wake sequence complete"
+        - script.execute: hide_loading_spinners   # hide page spinners once assets land
+    # Priority -100: after all components are set up — push the restored volume to
+    # the ES8311 (template number restore_value does not auto-fire set_action).
+    - priority: -100
+      then:
+        - lambda: 'id(ev_codec)->set_volume(id(volume).state / 100.0f);'
+    # Priority -200: re-apply the radar gate/timeout defaults each boot so a flash
+    # (which resets the LD2412 config) doesn't lose them. 15 s delay lets the
+    # LD2412 UART come up before we write. NB: this overwrites any live HA tweak
+    # on the next reboot — these are intentionally fixed values.
+    - priority: -200
+      then:
+        - delay: 15s
+        - number.set: { id: radar_min_gate, value: 1 }
+        - number.set: { id: radar_max_gate, value: 2 }
+        - number.set: { id: radar_timeout,  value: 2 }
+
+esp32:
+  board: esp32-p4-evboard
+  variant: esp32p4
+  engineering_sample: true
+  flash_size: 16MB
+  cpu_frequency: 360MHz
+  framework:
+    type: esp-idf
+    version: recommended
+    advanced:
+      enable_idf_experimental_features: yes
+    sdkconfig_options:
+      CONFIG_SPIRAM_XIP_FROM_PSRAM: "y"
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+esp_ldo:
+  - channel: 3
+    id: display_supply_ldo
+    voltage: 2.5V
+
+logger:
+  hardware_uart: UART0      # CH343P USB↔UART bridge → USB-C debug port (GPIO37/38)
+  baud_rate: 115200
+  level: debug
+
+# Example configuration entry
+#debug:
+#  update_interval: 30s
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+  actions:
+    # Called by HA "Kabel vergessen" automation
+    - action: blink_warning
+      variables:
+        headline: string
+        duration: int
+      then:
+        - script.execute:
+            id: blink_warning
+            headline: !lambda 'return headline;'
+            duration: !lambda 'return duration;'
+
+ota:
+  - platform: esphome
+    # OTA-Verschlüsselung (ESPHome 2026.9+) in zwei Schritten:
+    #  1) mit password flashen → Log zeigt "Encryption: offered, plaintext accepted"
+    #  2) password raus, bare `encryption:` rein (nutzt den api-Key) → erneut flashen
+    #password: !secret ota_password
+    encryption:
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    # Required: ESPHome's time component defaults to UTC. Without this set,
+    # localtime/mktime in lambdas return UTC-flavored values — breaks the
+    # grandma rule check (hour) and the plan POST date math.
+    timezone: "Europe/Zurich"
+    on_time_sync:
+      - script.execute: refresh_clock
+    on_time:
+      - seconds: 0
+        minutes: '*'
+        then:
+          - script.execute: refresh_clock
+
+#text_sensor:
+#  - platform: debug          # needs the debug: component (commented out above)
+#    device:
+#      name: "Device Info"
+#    reset_reason:
+#      name: "Reset Reason"
+#  - platform: uptime
+#    name: "${device_friendly} Uptime"
+#    entity_category: diagnostic
+
+# Heap/PSRAM/CPU diagnostics — need the debug: component (commented out above).
+#sensor:
+#  - platform: debug
+#    free:
+#      name: "Heap Free"
+#    block:
+#      name: "Heap Max Block"
+#    min_free:
+#      name: "Heap Min Free"
+#    fragmentation:
+#      name: "Heap Fragmentation"
+#    loop_time:
+#      name: "Loop Time"
+#    psram:
+#      name: "Free PSRAM"
+#    cpu_frequency:
+#      name: "CPU Frequency"
+
+
+# I²C bus shared by GT911 touch (0x5D) + panel PMIC (0x45)
+i2c:
+  - id: bus_a
+    sda: GPIO7
+    scl: GPIO8
+    frequency: 400kHz
+  # Sensor bus — separate from the 400 kHz display/touch bus_a because the
+  # SCD40 maxes out at 100 kHz. SHT41 (0x44) + SCD40 (0x62) live here.
+  - id: bus_b
+    sda: ${sensors_sda}
+    scl: ${sensors_scl}
+    frequency: 100kHz
+    scan: true
+
+# Panel PMIC (handles power-on sequence + backlight via register 0x96)
+i2c_device:
+  - id: panel_pmic
+    i2c_id: bus_a
+    address: 0x45
+
+# MIPI-DSI display — universal id ev_display
+display:
+  - platform: mipi_dsi
+    model: WAVESHARE-P4-NANO-10.1
+    id: ev_display
+    auto_clear_enabled: false  # LVGL manages the framebuffer
+    update_interval: never     # LVGL drives its own redraws
+
+# Touchscreen — universal id ev_touchscreen
+touchscreen:
+  - platform: gt911
+    id: ev_touchscreen
+    i2c_id: bus_a
+    address: 0x5D
+    transform:
+      mirror_x: false
+      mirror_y: false
+      swap_xy: false
+    # Horizontal swipe → page nav. Track start (on_touch) + latest x (on_update),
+    # decide on release: |dx| > 100 px = next/prev page (LVGL widgets still get
+    # their taps; we only act on a clear horizontal drag at release).
+    on_touch:
+      - lambda: |-
+          ESP_LOGI("touch", "press   x=%d y=%d id=%d", touch.x, touch.y, touch.id);
+          if (!id(swipe_active)) { id(swipe_start_x) = touch.x; id(swipe_active) = true; }
+          id(swipe_last_x) = touch.x;
+      - script.execute: wake_display
+    on_update:
+      - lambda: |-
+          for (auto &t : touches) id(swipe_last_x) = t.x;
+    on_release:
+      - lambda: |-
+          int dx = id(swipe_last_x) - id(swipe_start_x);
+          id(swipe_active) = false;
+          ESP_LOGI("touch", "release dx=%d", dx);
+          if      (dx < -100) { id(show_page)->execute(id(current_page) + 1); }
+          else if (dx >  100) { id(show_page)->execute(id(current_page) - 1); }
+
+# Backlight — wraps an i2c write to panel PMIC chip 0x45 register 0x96
+output:
+  - platform: template
+    id: backlight_pwm
+    type: float
+    write_action:
+      - lambda: |-
+          uint8_t value = (uint8_t)(state * 255.0f);
+          id(panel_pmic).write_byte(0x96, value);
+
+light:
+  - platform: monochromatic
+    id: backlight
+    name: "${device_friendly} Backlight"
+    output: backlight_pwm
+    default_transition_length: 300ms
+    restore_mode: ALWAYS_ON
+
+# Onboard Ethernet (IP101 PHY) — preferred over WiFi when cable is connected
+ethernet:
+  type: IP101
+  mdc_pin: GPIO31
+  mdio_pin: GPIO52
+  power_pin: GPIO51
+  # NB: asset loading is NOT triggered on on_connect — the switch holds the port
+  # in STP listening/learning for ~30 s after link-up, so early HTTP connects fail
+  # (ESP_ERR_HTTP_CONNECT). load_assets is driven by a delayed+retrying interval
+  # (http_polling.yaml) that starts past that window and retries until all loaded.
+  clk:
+    mode: CLK_EXT_IN
+    pin: GPIO50
+  phy_addr: 1
+  manual_ip:
+    static_ip: !secret ev_panel_static_ip
+    gateway: !secret ev_panel_gateway
+    subnet: !secret ev_panel_subnet
+    dns1: !secret ev_panel_dns
+
+# WiFi co-processor (ESP32-C6 over SDIO) — fallback / backup
+esp32_hosted:
+  active_high: true
+  variant: ESP32C6
+  reset_pin: GPIO54
+  cmd_pin: GPIO19
+  clk_pin: GPIO18
+  d0_pin: GPIO14
+  d1_pin: GPIO15
+  d2_pin: GPIO16
+  d3_pin: GPIO17
+
+# =============================================================================
+# Radar — HLK-LD2412 mmWave presence (only on the Niro Panel build)
+# Replaced the LD2410B 2026-06-13. Hardware + binary_sensor stay device-local;
+# the LVGL "Radar" dot lives in sections/statusbar.yaml (sb_radar_dot); the
+# script that toggles its colour is defined here so it can be omitted on
+# radar-less builds without breakage.
+# NB: LD2412 runs at 115200 baud (the LD2410 used 256000); parity NONE / 1 stop.
+# =============================================================================
+uart:
+  - id: radar_uart
+    tx_pin: GPIO21
+    rx_pin: GPIO20
+    baud_rate: 115200      # LD2412 default (LD2410 was 256000)
+    parity: NONE
+    stop_bits: 1
+
+ld2412:
+  uart_id: radar_uart
+  id: ev_radar
+
+binary_sensor:
+  - platform: ld2412
+    has_target:
+      id: ev_presence
+      name: "${device_friendly} Presence"
+      on_state:
+        - script.execute: refresh_radar_dot
+      on_press:
+        - script.execute: wake_display
+      on_release:
+        - script.execute: dim_after_timeout
+    has_moving_target:
+      name: "${device_friendly} Presence Moving"
+      entity_category: diagnostic
+    has_still_target:
+      name: "${device_friendly} Presence Still"
+      entity_category: diagnostic
+    # On while a Start-Dynamic-Background-Correction run is in progress.
+    dynamic_background_correction_status:
+      name: "${device_friendly} Radar Background Correction"
+      entity_category: diagnostic
+
+# Adjustable LD2412 detection range + presence timeout (HA number entities,
+# values persist to the radar's own EEPROM). NB: the LD2412 uses a single
+# min/max distance-gate pair — NOT the LD2410's separate move/still gates.
+number:
+  - platform: ld2412
+    min_distance_gate:
+      id: radar_min_gate
+      name: "${device_friendly} Radar Min Distance"
+      icon: mdi:arrow-collapse-left
+    max_distance_gate:
+      id: radar_max_gate
+      name: "${device_friendly} Radar Max Distance"
+      icon: mdi:arrow-expand-right
+    timeout:
+      id: radar_timeout
+      name: "${device_friendly} Radar Presence Timeout"
+      icon: mdi:timer-outline
+    light_threshold:
+      name: "${device_friendly} Radar Light Threshold"
+      icon: mdi:brightness-6
+      entity_category: diagnostic
+
+# Dynamic background correction — recalibrates the radar's noise floor. Keep the
+# area clear of people for ~10 s after pressing; progress shows on the
+# dynamic_background_correction_status binary_sensor above.
+button:
+  - platform: ld2412
+    start_dynamic_background_correction:
+      name: "${device_friendly} Radar Start Background Correction"
+      icon: mdi:radar
+
+# =============================================================================
+# Local climate sensors — SHT41 (temp/humidity) + SCD40 (CO₂) on bus_b.
+# SHT41 is the primary/shown temp+humidity; SCD40 temp/humidity are diagnostic
+# so HA's primary temp/humidity stay the SHT41's. Heater on the SHT41 stays off
+# (component default) to avoid self-heating bias.
+# =============================================================================
+
+# Air-quality warning latches (hysteresis state for check_air_quality).
+globals:
+  - id: co2_warn_on
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: hum_warn_on
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+sensor:
+  - platform: sht4x
+    i2c_id: bus_b
+    address: 0x44
+    update_interval: 30s
+    temperature:
+      id: sht41_temp
+      name: "${device_friendly} Raumtemperatur"
+      filters:
+        - lambda: 'return x + id(temp_offset).state;'   # HA-tunable calibration offset
+      on_value:
+        - script.execute: refresh_local_temp
+    humidity:
+      id: sht41_humidity
+      name: "${device_friendly} Luftfeuchtigkeit"
+      filters:
+        - lambda: 'return x + id(humidity_offset).state;'   # HA-tunable calibration offset
+      on_value:
+        - script.execute: check_air_quality
+
+  - platform: scd4x
+    i2c_id: bus_b
+    address: 0x62
+    update_interval: 60s
+    altitude_compensation: ${scd40_altitude_m}m
+    co2:
+      id: scd40_co2
+      name: "${device_friendly} CO₂"
+      on_value:
+        - script.execute: check_air_quality
+    temperature:
+      id: scd40_temp
+      name: "${device_friendly} CO₂-Sensor Temperatur"
+      entity_category: diagnostic
+    humidity:
+      id: scd40_humidity
+      name: "${device_friendly} CO₂-Sensor Luftfeuchtigkeit"
+      entity_category: diagnostic
+
+# refresh_radar_dot — toggles sb_radar_dot in sections/statusbar.yaml.
+# Lives next to the LD2412 binary_sensor that fires it.
+script:
+  # Air-quality banner: ON CO2>1400/hum>=70, OFF <1300/<68 (hysteresis latches).
+  # NB rendered text uses "CO2" — font_status has no subscript-₂ glyph.
+  - id: check_air_quality
+    then:
+      - lambda: |-
+          float co2 = id(scd40_co2).state;
+          float hum = id(sht41_humidity).state;
+          if (!std::isnan(co2)) {
+            if (co2 > ${co2_warn_ppm}) id(co2_warn_on) = true;
+            else if (co2 < ${co2_warn_ppm} - 100) id(co2_warn_on) = false;
+          }
+          if (!std::isnan(hum)) {
+            if (hum >= ${humidity_warn_pct}) id(hum_warn_on) = true;
+            else if (hum < ${humidity_warn_pct} - 2) id(hum_warn_on) = false;
+          }
+          if (id(co2_warn_on) || id(hum_warn_on)) {
+            char buf[64];
+            if (id(co2_warn_on) && id(hum_warn_on))
+              snprintf(buf, sizeof(buf), "${txt_air_both_fmt}", co2, hum);
+            else if (id(co2_warn_on))
+              snprintf(buf, sizeof(buf), "${txt_air_co2_fmt}", co2);
+            else
+              snprintf(buf, sizeof(buf), "${txt_air_hum_fmt}", hum);
+            lv_label_set_text(id(air_warning_label), buf);
+            lv_obj_clear_flag(id(air_warning_banner), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(air_warning_banner), LV_OBJ_FLAG_HIDDEN);
+          }
+
+  - id: refresh_radar_dot
+    then:
+      - lambda: |-
+          bool present = id(ev_presence).state;
+          lv_obj_set_style_bg_color(id(sb_radar_dot),
+            lv_color_hex(present ? $ok_green : $ink_faint), 0);
+
+  # Hide the per-page loading spinners once all online_image assets are in
+  # (assets_loaded is set by refresh_after_assets). Device-local: the spinner
+  # ids only exist on this build. 90 s timeout so they can't spin forever if an
+  # asset never loads.
+  - id: hide_loading_spinners
+    then:
+      - wait_until:
+          condition:
+            lambda: 'return id(assets_loaded);'
+          timeout: 90s
+      - lvgl.widget.hide: spin_main
+      - lvgl.widget.hide: spin_energy
+      - lvgl.widget.hide: spin_cistern
+
+  # Writes the SHT41 room temperature into the statusbar sb_temp label.
+  # Device-local (references the device-local sht41_temp), mirroring refresh_radar_dot.
+  - id: refresh_local_temp
+    then:
+      - lambda: |-
+          if (std::isnan(id(sht41_temp).state)) { lv_label_set_text(id(sb_temp), "—"); return; }
+          char buf[16];
+          snprintf(buf, sizeof(buf), "%.1f°", id(sht41_temp).state);
+          lv_label_set_text(id(sb_temp), buf);
+
+# =============================================================================
+# LVGL — 5 sections matching the mockup (800×1280 portrait)
+# =============================================================================
+lvgl:
+  displays: [ev_display]
+  byte_order: little_endian      # required for RGB565 to render correctly on this panel
+  buffer_size: 100%              # full-frame buffer in PSRAM (we have 32MB)
+  bg_color: $paper
+  text_color: $ink
+  text_font: font_label
+  touchscreens: [ev_touchscreen]
+
+  # Shared bottom status bar (clock + connectivity dots + page-dots) — same on every page.
+  top_layer:
+    widgets:
+      - !include ev-panel/sections/statusbar.yaml
+      - !include ev-panel/sections/air_warning.yaml
+      - !include ev-panel/sections/settings_popup.yaml   # last = above everything
+
+  pages:
+    - id: main_page
+      bg_color: $paper
+      width: 800
+      height: 1280
+      pad_all: 0
+      pad_bottom: 60          # keep content clear of the bottom statusbar
+      layout:
+        type: FLEX
+        flex_flow: COLUMN
+        pad_row: 0
+      widgets:
+        # "Schnellladen" button on top (Ladeplan was removed in the HA-as-hub migration).
+        - !include ev-panel/sections/charge_now.yaml
+        - !include ev-panel/sections/wallbox.yaml
+        - !include ev-panel/sections/vehicle.yaml
+        - !include ev-panel/sections/lock.yaml
+        - !include ev-panel/sections/climate.yaml
+        - !include { file: ev-panel/sections/loading_spinner.yaml, vars: { spin_id: spin_main } }
+    - id: energy_page
+      bg_color: $paper
+      width: 800
+      height: 1280
+      pad_all: 0
+      pad_bottom: 60          # clear the bottom statusbar
+      widgets:
+        - !include ev-panel/sections/energy_leds.yaml
+        - !include ev-panel/sections/energy.yaml
+        - !include ev-panel/sections/energy_cost.yaml
+        - !include { file: ev-panel/sections/loading_spinner.yaml, vars: { spin_id: spin_energy } }
+    - id: cistern_page
+      bg_color: $paper
+      width: 800
+      height: 1280
+      pad_all: 0
+      pad_bottom: 60          # clear the bottom statusbar
+      widgets:
+        - !include ev-panel/sections/weather.yaml   # upper half (y 0-640)
+        - !include ev-panel/sections/cistern.yaml   # lower half (y 640-1220)
+        - !include { file: ev-panel/sections/loading_spinner.yaml, vars: { spin_id: spin_cistern } }

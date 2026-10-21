@@ -1,0 +1,179 @@
+# EV-Panel — every visible text (German), plus the glyph sets that must cover it.
+# Merged into the device YAML's substitutions:
+#   substitutions:
+#     <<: !include ../ev-panel/texts_de.yaml
+#
+# Translating:
+#   1. Copy this file to texts_<lang>.yaml and change the include line above in
+#      the device YAML.
+#   2. Translate the values. Keep the double quotes; never use " or \ inside a
+#      value (it ends up in C string literals), and no "$" (it would be read
+#      as a substitution). "\n" is a line break, but only in the texts that
+#      already have one (LVGL labels) — elsewhere it breaks the C code.
+#   3. *_fmt values are printf formats: keep the placeholders listed under
+#      "# args:" in the same order and count, and write "%%" for a literal %.
+#      "# max N bytes" is the buffer size (UTF-8: ä/ö/ü/— count 2–3 bytes;
+#      numbers count at their widest, e.g. %d = 11) — longer text is cut off.
+#   4. Make sure default_glyphs (and glyphs_kw / glyphs_wb_power) contain every
+#      character you use,
+#      then run:  python3 scripts/check_glyphs.py ev-panel/texts_<lang>.yaml
+#
+# Order follows the screen: page 1 (Laden) → page 2 (Energie) → page 3
+# (Wetter + Zisterne), then the statusbar and air banner shown on every page.
+# German texts use Swiss spelling (ss, never ß).
+
+# Every font that renders text uses this set (Latin + German umlauts).
+default_glyphs: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~°·—–ÄÖÜßäöü€…"
+
+# ═══ Page 1 — Laden ═════════════════════════════════════════════════════════
+# ── Schnellladen + Ladeplan buttons ──
+txt_charge_now_button: "Schnellladen"
+# Two lines in the 80 px button — keep it short.
+txt_plan_button: "Bis morgen früh\nvoll laden"
+
+# ── Settings popup (gear on the wallbox card) — evcc "Dauerhaft laden" ──
+txt_settings_title: "Laden im Normalbetrieb"
+txt_settings_hint: "Gilt bis du es wieder änderst (z. B. Sommer/Winter)."
+txt_settings_pv_only: "Nur mit PV-Überschuss laden"
+txt_settings_pv_only_sub: "Lädt nur, wenn die Sonne genug liefert."
+txt_settings_grid_pv: "Langsam vom Netz + mit PV-Überschuss laden"
+txt_settings_grid_pv_sub: "Lädt immer mindestens langsam, bei Sonne schneller."
+txt_settings_close: "Schliessen"
+
+# ── Wallbox card ──
+txt_wb_title: "WALLBOX"
+txt_wb_status_initial: "Lade mit Solarstrom!"
+txt_wb_power_initial: "3.7 kW"
+txt_wb_error: "Wallbox-Fehler"
+txt_wb_error_sub: "Details im Warp3-Webinterface"
+txt_wb_idle: "Warten auf Niro"
+# args: %d
+# max 43 bytes
+txt_wb_idle_sub_fmt: "Akku %d %% — kein Laden nötig"
+txt_wb_unplugged: "Kabel nicht eingesteckt"
+# Flashed when Schnellladen / Ladeplan is tapped without the cable (refused).
+txt_wb_plug_in_first: "Bitte Kabel einstecken!"
+# args: %d
+# max 43 bytes
+txt_wb_unplugged_sub_fmt: "Akku %d %% — bitte laden"
+txt_wb_fast: "Schnellladen"
+# Status while charging in Smart mode (Schnell mode uses txt_wb_fast).
+txt_wb_charging: "Laden"
+txt_wb_solar_sub: "PV-Überschuss"
+txt_wb_waiting: "Wartet auf Sonne"
+txt_wb_waiting_sub: "Überschuss noch zu klein"
+txt_wb_paused: "Laden pausiert"
+txt_wb_paused_sub: "Modus: Aus"
+txt_wb_ready: "Bereit zum Laden"
+txt_wb_ready_sub: "wartet auf Überschuss oder Start"
+
+# ── Vehicle card ──
+txt_veh_range_unit: "km Reichweite"
+
+# ── Lock + Fenster ──
+txt_lock_locked: "Verriegelt"
+txt_lock_unlocked: "Entriegelt"
+# Shown while a lock/unlock command is in flight.
+txt_lock_busy: "…"
+txt_lock_win_open: "Fenster\nauf"
+txt_lock_win_close: "Fenster\nzu"
+
+# ── Climate ──
+txt_climate_button: "Vorklimatisieren"
+
+# ═══ Page 2 — Energie ═══════════════════════════════════════════════════════
+txt_en_autarky_label: "Eigenversorgungsanteil"
+txt_en_pv: "PV"
+txt_en_house: "Haus"
+txt_en_wp: "WP"
+txt_en_ev: "EV"
+txt_en_grid: "Netz"
+txt_en_batt: "PV-Akku"
+# Power in kW — energy-page centre numbers; also the wallbox badge's total
+# when evcc's solar share is unknown.
+# args: %.1f
+# max 13 bytes
+txt_kw_fmt: "%.1f kW"
+# The energy-page centre numbers use a font cut down to these characters.
+# covers: txt_kw_fmt
+glyphs_kw: "0123456789.-— kW%"
+
+# Wallbox charging badges: grid part (dark) and solar part (green).
+# args: %.1f
+# max 23 bytes
+txt_wb_grid_fmt: "%.1f kW Netz"
+# args: %.1f
+# max 23 bytes
+txt_wb_pv_fmt: "%.1f kW PV"
+# The wallbox badge font is cut down to these characters.
+# covers: txt_kw_fmt txt_wb_grid_fmt txt_wb_pv_fmt txt_wb_power_initial
+glyphs_wb_power: "0123456789.-— kWNetzPV%"
+
+# ── Strom heute table ──
+txt_ec_title: "Strom heute"
+txt_ec_col_energy: "Energie"
+txt_ec_col_cost: "Kosten"
+txt_ec_pv: "Solar Ertrag"
+txt_ec_batt_in: "Batterie geladen"
+txt_ec_batt_out: "Batterie entladen"
+txt_ec_batt_total: "Batterie Total"
+txt_ec_grid_in: "vom Netz importiert"
+txt_ec_grid_out: "ins Netz exportiert"
+txt_ec_grid_total: "Netz Total"
+txt_ec_house: "Haus"
+txt_ec_wp: "Heizung & Warmwasser"
+txt_ec_ev: "Niro geladen"
+# args: %.1f
+# max 15 bytes
+txt_kwh_fmt: "%.1f kWh"
+# args: %.2f
+# max 15 bytes
+txt_chf_fmt: "%.2f CHF"
+
+# ═══ Page 3 — Wetter + Zisterne ═════════════════════════════════════════════
+txt_we_title: "WETTER"
+txt_we_today: "Heute"
+# Weekday abbreviations, Sunday first (weather columns + statusbar clock).
+txt_day_0: "So"
+txt_day_1: "Mo"
+txt_day_2: "Di"
+txt_day_3: "Mi"
+txt_day_4: "Do"
+txt_day_5: "Fr"
+txt_day_6: "Sa"
+
+txt_ci_title: "ZISTERNE"
+# Litres under the tank, Swiss thousands separator (1'234 L).
+# args: %d %03d
+# max 31 bytes
+txt_ci_liters_thousands_fmt: "%d'%03d L"
+# args: %d
+# max 31 bytes
+txt_ci_liters_fmt: "%d L"
+txt_ci_usage_initial: "Verbrauch heute: —"
+# args: %.0f
+# max 35 bytes
+txt_ci_usage_fmt: "Verbrauch heute: %.0f L"
+txt_ci_pump_initial: "Pumpe: —"
+txt_ci_pump_on: "Pumpe: Läuft"
+txt_ci_pump_off: "Pumpe: Aus"
+txt_ci_rain_initial: "letzter Regen: —"
+# args: %s
+# max 47 bytes
+txt_ci_rain_fmt: "letzter Regen: %s"
+
+# ═══ Every page — statusbar + air banner ════════════════════════════════════
+txt_sb_ha: "HA"
+txt_sb_evcc: "evcc"
+txt_sb_radar: "Radar"
+
+txt_air_title: "Lüften"
+# args: %.0f %.0f
+# max 63 bytes
+txt_air_both_fmt: "Lüften — CO2 %.0f ppm · Feuchte %.0f%%"
+# args: %.0f
+# max 63 bytes
+txt_air_co2_fmt: "Lüften — CO2 %.0f ppm"
+# args: %.0f
+# max 63 bytes
+txt_air_hum_fmt: "Lüften — Luftfeuchte %.0f%%"

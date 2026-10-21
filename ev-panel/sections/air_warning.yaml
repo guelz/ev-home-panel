@@ -1,0 +1,29 @@
+# EV-Panel — air-quality warning banner. Lives in lvgl top_layer (overlays every
+# page), pinned to the top. Shown/hidden + text set by check_air_quality (device
+# YAML) from scd40_co2 + sht41_humidity. clickable:false → taps pass through to
+# the page beneath.
+obj:
+  id: air_warning_banner
+  width: 100%
+  height: 56
+  align: TOP_MID
+  y: 0
+  bg_color: $warn_red
+  bg_opa: COVER
+  border_width: 0
+  radius: 0
+  hidden: true
+  clickable: false
+  scrollable: false
+  layout:
+    type: FLEX
+    flex_flow: ROW
+    flex_align_main: CENTER
+    flex_align_cross: CENTER
+  widgets:
+    - label:
+        id: air_warning_label
+        text: "$txt_air_title"
+        text_font: font_status
+        text_color: $paper
+        text_align: CENTER

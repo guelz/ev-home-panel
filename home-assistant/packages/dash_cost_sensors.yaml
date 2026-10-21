@@ -1,0 +1,189 @@
+# =============================================================================
+# Custom Energy-Dashboard COST layer  —  prices (CHF/kWh)
+# =============================================================================
+# Grid prices: flat 2026 tariff (example: a Swiss municipal utility, incl. 8.1% VAT), edited
+# as plain input_number helpers.
+# Solar / battery prices: LCOE computed from install cost + depreciation +
+# annual throughput + lifetime helpers, so they auto-recalc when you update
+# the figures.
+#
+# Deploy: PACKAGE file -> /config/packages/
+# `initial:` omitted so manual edits persist; starting values set once via
+# input_number.set_value.
+#
+# Grid tariff basis (2026, Rp/kWh, ×1.081 VAT):
+#   Variable: Netz 6.10 + Energie 12.50 + SDL 0.27 + Reserve 0.41
+#             + Solidar 0.05 + Netzzuschlag 2.30 = 21.63 Rp
+#   Fixed:    (Netz 12 + Energie 3 + Mess 14) CHF/mo = 348/yr  / 10'000 kWh = 3.48 Rp
+#   import all-in  = (21.63 + 3.48) * 1.081 = 0.27144 CHF/kWh
+#   import marginal= 21.63 * 1.081           = 0.23382 CHF/kWh
+#   export         = 8.5 Rueckliefer + 3.0 HKN = 0.115 CHF/kWh (no VAT, private)
+#   Assumption since 2026-10-21 (new EV): 10'000 kWh/yr consumption, 3'000 kWh/yr
+#   feed-in (was 8'034 kWh → 0.28064). Feed-in volume doesn't change the per-kWh
+#   export price. Yearly estimate: 2'714.39 import − 345.00 export = 2'369.39 CHF.
+#   Same values are set in evcc (tariffs grid / feedin).
+#
+# Solar LCOE   = <PV install cost> / (annual_production * solar_lifetime_years)     [default 25]
+# Battery LCOE = solar_price / (efficiency/100) + <battery install cost> / (annual_discharge * battery_lifetime_years)  [default 25]
+#   battery lifetime: 25 yr calendar (conservative). Cycle-life alternative =
+#   6000 cycles (Huawei LUNA S0) * 20 kWh / 3000 kWh/yr = ~40 yr.
+# =============================================================================
+
+input_number:
+  # --- Grid prices (flat, edit when the tariff changes) ---
+  dash_price_import:
+    name: "Dash Price Import"
+    min: 0
+    max: 5
+    step: 0.00001
+    unit_of_measurement: CHF/kWh
+    mode: box
+    icon: mdi:transmission-tower-export
+  dash_price_import_marginal:
+    name: "Dash Price Import Marginal"
+    min: 0
+    max: 5
+    step: 0.00001
+    unit_of_measurement: CHF/kWh
+    mode: box
+    icon: mdi:cash-fast
+  dash_price_export:
+    name: "Dash Price Export"
+    min: 0
+    max: 5
+    step: 0.00001
+    unit_of_measurement: CHF/kWh
+    mode: box
+    icon: mdi:transmission-tower-import
+
+  # --- Solar / battery LCOE inputs (update yearly / tweak assumptions) ---
+  dash_solar_annual_production:
+    name: "Dash Solar Annual Production"
+    min: 0
+    max: 20000
+    step: 1
+    unit_of_measurement: kWh
+    mode: box
+    icon: mdi:solar-power
+  dash_battery_annual_discharge:
+    name: "Dash Battery Annual Discharge"
+    min: 0
+    max: 20000
+    step: 1
+    unit_of_measurement: kWh
+    mode: box
+    icon: mdi:battery-arrow-down
+  dash_battery_efficiency:
+    name: "Dash Battery Efficiency"
+    min: 0
+    max: 100
+    step: 0.5
+    unit_of_measurement: "%"
+    mode: box
+    icon: mdi:battery-sync
+  dash_solar_lifetime_years:
+    name: "Dash Solar Lifetime Years"
+    min: 1
+    max: 40
+    step: 1
+    unit_of_measurement: yr
+    mode: box
+    icon: mdi:calendar-clock
+  dash_battery_lifetime_years:
+    name: "Dash Battery Lifetime Years"
+    min: 1
+    max: 40
+    step: 1
+    unit_of_measurement: yr
+    mode: box
+    icon: mdi:calendar-clock
+
+template:
+  - sensor:
+      # --- Grid price entities (unit CHF/kWh; no monetary device_class) ---
+      - name: "Dash Price Import"
+        unique_id: dash_price_import_sensor
+        unit_of_measurement: CHF/kWh
+        state_class: measurement
+        icon: mdi:transmission-tower-export
+        availability: >
+          {{ states('input_number.dash_price_import') not in ['unknown','unavailable','none'] }}
+        state: "{{ states('input_number.dash_price_import') | float(0) }}"
+
+      - name: "Dash Price Import Marginal"
+        unique_id: dash_price_import_marginal_sensor
+        unit_of_measurement: CHF/kWh
+        state_class: measurement
+        icon: mdi:cash-fast
+        availability: >
+          {{ states('input_number.dash_price_import_marginal') not in ['unknown','unavailable','none'] }}
+        state: "{{ states('input_number.dash_price_import_marginal') | float(0) }}"
+
+      - name: "Dash Price Export"
+        unique_id: dash_price_export_sensor
+        unit_of_measurement: CHF/kWh
+        state_class: measurement
+        icon: mdi:transmission-tower-import
+        availability: >
+          {{ states('input_number.dash_price_export') not in ['unknown','unavailable','none'] }}
+        state: "{{ states('input_number.dash_price_export') | float(0) }}"
+
+      # --- Solar LCOE: install cost / (annual production * lifetime years) ---
+      - name: "Dash Price Solar"
+        unique_id: dash_price_solar
+        unit_of_measurement: CHF/kWh
+        state_class: measurement
+        icon: mdi:solar-power
+        availability: >
+          {{ states('input_number.dash_solar_annual_production') | float(0) > 0
+             and states('input_number.dash_solar_lifetime_years') | float(0) > 0 }}
+        state: >
+          {% set cost = 25000.00 %}   {# ← your PV install cost #}
+          {% set years = states('input_number.dash_solar_lifetime_years') | float(25) %}
+          {% set prod = states('input_number.dash_solar_annual_production') | float(0) %}
+          {{ (cost / (prod * years)) | round(5) }}
+
+      # --- Battery LCOE: solar fuel (eff-adjusted) + hardware depreciation ---
+      - name: "Dash Price Battery"
+        unique_id: dash_price_battery
+        unit_of_measurement: CHF/kWh
+        state_class: measurement
+        icon: mdi:home-battery
+        availability: >
+          {{ states('sensor.dash_price_solar') not in ['unknown','unavailable','none']
+             and states('input_number.dash_battery_annual_discharge') | float(0) > 0
+             and states('input_number.dash_battery_efficiency') | float(0) > 0
+             and states('input_number.dash_battery_lifetime_years') | float(0) > 0 }}
+        state: >
+          {% set cost = 8000.00 %}   {# ← your battery install cost #}
+          {% set years = states('input_number.dash_battery_lifetime_years') | float(25) %}
+          {% set solar = states('sensor.dash_price_solar') | float(0) %}
+          {% set eff = states('input_number.dash_battery_efficiency') | float(75) / 100 %}
+          {% set disch = states('input_number.dash_battery_annual_discharge') | float(0) %}
+          {{ (solar / eff + cost / (disch * years)) | round(5) }}
+        attributes:
+          fuel_pv_per_kwh: >
+            {% set solar = states('sensor.dash_price_solar') | float(0) %}
+            {% set eff = states('input_number.dash_battery_efficiency') | float(75) / 100 %}
+            {{ (solar / eff) | round(5) }}
+          depreciation_per_kwh: >
+            {% set disch = states('input_number.dash_battery_annual_discharge') | float(0) %}
+            {% set years = states('input_number.dash_battery_lifetime_years') | float(25) %}
+            {{ (8000.00 / (disch * years)) | round(5) if disch > 0 else 0 }}
+
+      # --- Self-owned measured round-trip efficiency (reference) ---
+      # = lifetime discharge kWh / lifetime charge kWh. Built from the dash_*
+      # energy counters (started 2026-06-06, no backfill). Stays unavailable
+      # until >=1 kWh has cycled; needs a few weeks to stabilise before you
+      # copy it into input_number.dash_battery_efficiency.
+      - name: "Dash Battery Efficiency Measured"
+        unique_id: dash_battery_efficiency_measured
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:battery-sync
+        availability: >
+          {{ states('sensor.dash_battery_charge_energy') | float(0) > 1 }}
+        state: >
+          {% set ch = states('sensor.dash_battery_charge_energy') | float(0) %}
+          {% set di = states('sensor.dash_battery_discharge_energy') | float(0) %}
+          {{ (di / ch * 100) | round(1) if ch > 0 else 0 }}

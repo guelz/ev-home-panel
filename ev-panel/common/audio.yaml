@@ -1,0 +1,70 @@
+# EV-Panel — audio subsystem (beeps only). WAVESHARE board: ES8311 + NS4150B + speaker.
+# Proven via _spike-audio-p4.yaml. References the device i2c bus `bus_a` by id (no re-declare).
+# Chain: I2S (GPIO9/10/12/13) → ES8311 (i2c 0x18) → NS4150B PA (GPIO53 enable) → speaker.
+i2s_audio:
+  - id: i2s_bus
+    i2s_lrclk_pin: GPIO10
+    i2s_bclk_pin: GPIO12
+    i2s_mclk_pin: GPIO13
+
+audio_dac:
+  - platform: es8311
+    id: ev_codec
+    i2c_id: bus_a
+    address: 0x18
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    use_mclk: true
+    use_microphone: false
+
+speaker:
+  - platform: i2s_audio
+    id: ev_speaker
+    i2s_audio_id: i2s_bus
+    dac_type: external
+    i2s_dout_pin: GPIO9
+    channel: mono
+    sample_rate: 16000
+    bits_per_sample: 16bit
+
+rtttl:
+  id: ev_rtttl
+  speaker: ev_speaker
+  gain: 60%
+
+# NS4150B PA enable — high at boot (no switching pops). Hidden from HA.
+switch:
+  - platform: gpio
+    id: pa_enable
+    internal: true
+    pin: GPIO53
+    restore_mode: ALWAYS_ON
+
+# Master volume → ES8311 DAC. 0 = mute. (Applied to the codec at boot from on_boot.)
+number:
+  - platform: template
+    id: volume
+    name: "${device_friendly} Lautstärke"
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    min_value: 0
+    max_value: 100
+    step: 5
+    unit_of_measurement: "%"
+    mode: slider
+    set_action:
+      - lambda: 'id(ev_codec)->set_volume(x / 100.0f);'
+
+# Short click blip for interactive taps.
+script:
+  - id: beep_click
+    mode: restart
+    then:
+      - rtttl.play: "click:d=32,o=7,b=320:c"
+
+  # Warning tick used by blink_warning (scripts_render.yaml).
+  - id: beep_warn
+    mode: restart
+    then:
+      - rtttl.play: "warn:d=16,o=5,b=120:c"

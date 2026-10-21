@@ -1,0 +1,100 @@
+# EV-Panel — §5 button row: LOCK (left) + Fenster auf / Fenster zu (right).
+# Lock painted by render_lock (scripts_lock.yaml); tap → tap_lock (lock now;
+# no-op while already locked — unlock removed, car rejects 3rd-party unlock).
+# Windows: two explicit buttons, NO toggle and NO state. The kia_uvo window
+# sensors never leave "closed" on this car (verified 2026-08-03: force_refresh
+# reached the car — sensor.niro_last_updated_at moved — while the front windows
+# were physically open and the binary_sensors stayed off). A toggle would have
+# to guess, and guessed wrong after every panel reboot or HA-side press.
+# The green border is a tap acknowledgement only, not vehicle state.
+# Note: the car only acts on the two front windows for "open all windows".
+obj:
+  id: sec_lock
+  width: 100%
+  height: 108
+  bg_color: $paper_tint
+  bg_opa: COVER
+  border_width: 0
+  scrollable: false
+  pad_left: 14
+  pad_right: 14
+  pad_top: 9
+  pad_bottom: 9
+  layout:
+    type: FLEX
+    flex_flow: ROW
+    pad_column: 14
+  widgets:
+    - button:
+        id: lock_btn
+        # grow 2 vs 1+1: lock keeps half the row, the two window buttons split
+        # the rest (~186px each of the 772px content width).
+        flex_grow: 2
+        height: 90
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 3
+        radius: 8
+        shadow_width: 0
+        pad_all: 10
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_column: 14
+        widgets:
+          - image:
+              id: lock_icon
+              src: img_loading        # online_image img_lock_*; swapped by render_lock
+          - label:
+              id: lock_label
+              text: "—"
+              text_font: font_status
+              text_color: $ink
+        on_click:
+          - script.execute: tap_lock
+    - button:
+        id: win_open_btn
+        flex_grow: 1
+        height: 90
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 3
+        radius: 8
+        shadow_width: 0
+        # pad 4 (not 10): two font_status lines need ~72px of the 90px height
+        pad_all: 4
+        widgets:
+          - label:
+              id: win_open_label
+              align: CENTER
+              text: "$txt_lock_win_open"
+              text_font: font_status
+              text_color: $ink
+              text_align: CENTER
+        on_click:
+          - script.execute: tap_win_open
+    - button:
+        id: win_close_btn
+        flex_grow: 1
+        height: 90
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 3
+        radius: 8
+        shadow_width: 0
+        pad_all: 4
+        widgets:
+          - label:
+              id: win_close_label
+              align: CENTER
+              text: "$txt_lock_win_close"
+              text_font: font_status
+              text_color: $ink
+              text_align: CENTER
+        on_click:
+          - script.execute: tap_win_close

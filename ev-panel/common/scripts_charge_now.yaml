@@ -1,0 +1,118 @@
+# EV-Panel — "Schnellladen" module (standalone). Toggles the Warp3 charge
+# mode via HA: tap → Schnell, tap again → Smart. Border shows $ok_green while
+# Schnell. State source: select.evcc_lademodus (wb_mode_s, ha_entities.yaml) —
+# seit 2026-09-03 managt evcc alle Ladepunkte, "Schnell" entspricht evcc-Modus
+# "now" (Loadpoint 1 = Warp3 Charger Parkplatz).
+# Optimistic flip via wb_schnell_optimistic; reconciled when the select's real
+# state pushes back (wb_mode_s on_value clears the flag + re-renders).
+#
+# "Bis morgen früh voll laden": tap sets the evcc charge plan to
+# ${plan_target_soc} % by the next ${plan_target_time} via the HA script
+# ${ha_plan_script} (it computes the date and publishes the MQTT command);
+# tap while active cancels it (soc 0). Active = plan sensor > 0.
+#
+# Required substitutions: ${ha_wb_mode_select}, ${evcc_mode_now}, ${evcc_mode_smart},
+#   ${ha_plan_script}, ${ha_plan_soc}, ${plan_target_soc}, ${plan_target_time}.
+
+script:
+  # Border = green while a plan is active (or optimistically after setting one).
+  - id: render_plan_btn
+    then:
+      - lambda: |-
+          bool active = (id(plan_soc_s).has_state() && !std::isnan(id(plan_soc_s).state)
+                         && id(plan_soc_s).state > 0.5f) || id(plan_optimistic);
+          lv_obj_set_style_border_color(id(plan_btn),
+            lv_color_hex(active ? $ok_green : $ink), 0);
+
+  # Tap → set the plan, or cancel it when one is active. Setting is refused
+  # while the cable is out (flash + tap again once plugged in); cancelling
+  # always works. Unknown cable state does not block.
+  - id: tap_plan
+    then:
+      - script.execute: beep_click
+      - if:
+          condition:
+            lambda: |-
+              bool active = (id(plan_soc_s).has_state() && !std::isnan(id(plan_soc_s).state)
+                             && id(plan_soc_s).state > 0.5f) || id(plan_optimistic);
+              return !active && id(wb_cable_s).has_state() && !id(wb_cable_s).state;
+          then:                       # kein Kabel → nichts tun, nur warnen
+            - script.execute: { id: blink_warning, headline: "${txt_wb_plug_in_first}", duration: 5 }
+          else:
+            - if:
+                condition:
+                  lambda: |-
+                    return (id(plan_soc_s).has_state() && !std::isnan(id(plan_soc_s).state)
+                            && id(plan_soc_s).state > 0.5f) || id(plan_optimistic);
+                then:                 # aktiv → Plan löschen
+                  - lambda: 'id(plan_optimistic) = false;'
+                  - script.stop: plan_optimistic_timeout
+                  - homeassistant.action:
+                      action: ${ha_plan_script}
+                      data:
+                        soc: "0"
+                else:                 # → Plan setzen
+                  - lambda: 'id(plan_optimistic) = true;'
+                  - homeassistant.action:
+                      action: ${ha_plan_script}
+                      data:
+                        soc: "${plan_target_soc}"
+                        time: "${plan_target_time}"
+                  - script.execute: plan_optimistic_timeout
+            - script.execute: render_plan_btn
+
+  # evcc only reports the plan once the car is identified at the wallbox — if no
+  # confirmation arrives, drop the optimistic green after 20 s.
+  - id: plan_optimistic_timeout
+    mode: restart
+    then:
+      - delay: 20s
+      - lambda: 'id(plan_optimistic) = false;'
+      - script.execute: render_plan_btn
+
+  # Border = green while mode is Schnell (or optimistically after a tap).
+  - id: render_charge_now
+    then:
+      - lambda: |-
+          bool schnell = (id(wb_mode_s).has_state() && id(wb_mode_s).state == "${evcc_mode_now}")
+                         || id(wb_schnell_optimistic);
+          lv_obj_set_style_border_color(id(charge_now_btn),
+            lv_color_hex(schnell ? $ok_green : $ink), 0);
+
+  # Tap → toggle Schnell ↔ Smart. "Smart" (nicht das alte "PV") lässt evccs
+  # "Dauerhaft laden" unberührt — "pv" würde es seit evcc 0.316 ausschalten.
+  # Switching ON is refused while the cable is out (flash + tap again once
+  # plugged in); switching back to Smart always works.
+  - id: tap_charge_now
+    then:
+      - script.execute: beep_click
+      - if:
+          condition:
+            lambda: |-
+              bool schnell = (id(wb_mode_s).has_state() && id(wb_mode_s).state == "${evcc_mode_now}")
+                             || id(wb_schnell_optimistic);
+              return !schnell && id(wb_cable_s).has_state() && !id(wb_cable_s).state;
+          then:                       # kein Kabel → nichts tun, nur warnen
+            - script.execute: { id: blink_warning, headline: "${txt_wb_plug_in_first}", duration: 5 }
+          else:
+            - if:
+                condition:
+                  lambda: |-
+                    return (id(wb_mode_s).has_state() && id(wb_mode_s).state == "${evcc_mode_now}")
+                           || id(wb_schnell_optimistic);
+                then:                 # Schnell → zurück zu Smart
+                  - lambda: 'id(wb_schnell_optimistic) = false;'
+                  - homeassistant.action:
+                      action: select.select_option
+                      data:
+                        entity_id: ${ha_wb_mode_select}
+                        option: "${evcc_mode_smart}"
+                else:                 # → Schnell
+                  - lambda: 'id(wb_schnell_optimistic) = true;'
+                  - homeassistant.action:
+                      action: select.select_option
+                      data:
+                        entity_id: ${ha_wb_mode_select}
+                        option: "${evcc_mode_now}"
+            - script.execute: render_charge_now
+            - script.execute: render_wallbox

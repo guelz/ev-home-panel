@@ -1,0 +1,59 @@
+# =============================================================================
+# evcc Ladeplan bis morgen — called by the panel button "Bis morgen früh voll laden"
+# =============================================================================
+# Sets (soc > 0) or deletes (soc = 0) the evcc SoC charge plan of one vehicle:
+# target SoC by the NEXT occurrence of `time` (today if still ahead, else
+# tomorrow). evcc's plan strategy and the vehicle's charge limit stay as they
+# are configured in evcc.
+#
+# How it talks to evcc: MQTT setter `evcc/vehicles/<name>/planSoc/set` with
+# JSON {"time": <RFC 3339>, "value": <soc>}; value 0 deletes the plan.
+# `vehicle` is evcc's vehicle NAME (not the title): a vehicle created in the evcc
+# UI is called "db:<n>" — look it up under "vehicles" in http://<evcc>:7070/api/state.
+#
+# Install: add to /config/scripts.yaml (or paste into a new script in the UI,
+# "Edit in YAML"). The panel calls it via substitution `ha_plan_script`.
+# =============================================================================
+evcc_ladeplan_bis_morgen:
+  alias: evcc Ladeplan bis morgen
+  description: >-
+    Setzt (soc > 0) oder löscht (soc = 0) den evcc-Ladeplan: Ziel-SoC bis zur
+    nächsten kommenden Uhrzeit 'time'. Aufgerufen vom EV-Panel-Knopf
+    'Bis morgen früh voll laden'. Strategie und Ladelimit bleiben die von evcc.
+  icon: mdi:calendar-clock
+  mode: queued
+  max: 3
+  fields:
+    soc:
+      name: Ziel-SoC
+      description: Ziel-Ladestand in %; 0 löscht den Plan.
+      required: true
+      example: 90
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+    time:
+      name: Uhrzeit
+      description: Bis wann; es zählt die nächste kommende Uhrzeit (heute oder morgen).
+      required: false
+      default: "07:00:00"
+      example: "07:00"
+      selector:
+        time: {}
+  variables:
+    vehicle: "db:26"            # ← your evcc vehicle name
+    target: >-
+      {% set t = today_at(time | default('07:00')) %}{{ (t if t > now() else t + timedelta(days=1)).isoformat() }}
+  sequence:
+    - action: mqtt.publish
+      data:
+        topic: "evcc/vehicles/{{ vehicle }}/planSoc/set"
+        payload: '{"time": "{{ target }}", "value": {{ soc | int(0) }}}'
+        retain: false
+      note: >-
+        evcc-Fahrzeug-Setter planSoc: JSON {time, value}; value 0 löscht den Plan.
+        retain false — sonst würde der Befehl nach jedem Broker-Reconnect erneut
+        ausgeführt.

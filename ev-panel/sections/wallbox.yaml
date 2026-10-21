@@ -1,0 +1,123 @@
+# EV-Panel — §2 WALLBOX (444 px)
+# Absolute positioning (no flex) so the watermark sits independently behind foreground.
+# All foreground state — icon, status verb, power badge, sub italic — gets repainted
+# by `render_wallbox` when the HA subscriptions fire render_wallbox.
+# Hardcoded values below are the initial mockup state.
+
+obj:
+  id: sec_wallbox
+  width: 100%
+  height: 444
+  flex_grow: 1        # auto-fills the column
+  bg_opa: TRANSP
+  border_width: 0
+  scrollable: false
+  pad_all: 0
+  widgets:
+    # Watermark — Wallbox.png peeks in from right edge, behind everything
+    - image:
+        id: wb_watermark
+        src: img_loading        # online_image img_wallbox_bg; swapped in by refresh_after_assets
+        align: RIGHT_MID
+        x: 60
+
+    # Section label — small caps top-left
+    - label:
+        text: "$txt_wb_title"
+        align: TOP_LEFT
+        x: 28
+        y: 18
+        text_font: font_section_title
+        text_color: $ink_mute
+        text_letter_space: 4
+
+    # Gear — opens the "Laden im Normalbetrieb" popup (settings_popup.yaml).
+    # LVGL's built-in settings symbol (LV_SYMBOL_SETTINGS) from montserrat_32.
+    - button:
+        id: settings_btn
+        width: 64
+        height: 64
+        radius: 32
+        align: TOP_RIGHT
+        x: -20
+        y: 14
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 2
+        shadow_width: 0
+        pad_all: 0
+        widgets:
+          - label:
+              align: CENTER
+              text: ""   # i18n-ok — LVGL symbol, not text
+              text_font: montserrat_32
+              text_color: $ink
+        on_click:
+          - script.execute: open_settings
+
+    # Status icon — centered, near top
+    - image:
+        id: wb_icon
+        src: img_loading        # online_image state icon; swapped in by render_wallbox once loaded
+        align: TOP_MID
+        y: 30
+
+    # Status verb — Crimson Bold 60px, centered below icon
+    - label:
+        id: wb_status_label
+        text: "$txt_wb_status_initial"
+        align: TOP_MID
+        y: 312
+        text_font: font_crimson_status
+        text_color: $ink
+
+    # Power badges (Crimson Bold 36px — the only read-out of what the car draws,
+    # so it must be legible from a distance): wb_power = grid part (or the total
+    # when evcc's solar share is unknown), wb_power_pv = solar part in green.
+    # The sub italic shows only when not charging. Centered below the verb.
+    - obj:
+        id: wb_meta_row
+        align: TOP_MID
+        y: 382
+        width: SIZE_CONTENT
+        height: SIZE_CONTENT
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_cross: CENTER
+          pad_column: 14
+        widgets:
+          - label:
+              id: wb_power
+              text: "$txt_wb_power_initial"
+              text_font: font_crimson_wb_power
+              text_color: $paper
+              bg_color: $ink
+              bg_opa: COVER
+              radius: 4
+              pad_left: 14
+              pad_right: 14
+              pad_top: 4
+              pad_bottom: 4
+          - label:
+              id: wb_power_pv
+              hidden: true
+              text: "$txt_wb_power_initial"
+              text_font: font_crimson_wb_power
+              text_color: $paper
+              bg_color: $ok_green
+              bg_opa: COVER
+              radius: 4
+              pad_left: 14
+              pad_right: 14
+              pad_top: 4
+              pad_bottom: 4
+          - label:
+              id: wb_sub
+              text: "$txt_wb_solar_sub"
+              text_font: font_crimson_meta
+              text_color: $ink_soft

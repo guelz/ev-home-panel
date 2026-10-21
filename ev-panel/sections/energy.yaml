@@ -1,0 +1,212 @@
+# EV-Panel — §Energy (page 2). Power-flow dashboard: 6 arc-gauge nodes.
+# Absolute layout on an 800×1280 page — energy occupies the UPPER HALF (y ≤ 640),
+# the lower half stays free (future cistern merge).
+# Coordinates + colors from docs/specs/new_energy-layout.json (ortho routing):
+#   PV 400,160 · Haus 660,355 · Netz 140,355 · PV-Akku 400,550 — arc Ø132 (r66)
+#   WP 660,145 · EV 660,565 (straight above/below Haus)        — arc Ø132 (r66)
+# Per-arc colors (single source of truth = the spec JSON):
+#   PV 0xE07B00 · Haus 0x0E8F8F · WP 0xB08900 · EV $ok_green
+#   Netz split: Einspeisung 0x2F6FB0 / Bezug 0xA81D1D (runtime, render_energy)
+#   Akku split: Laden 0x424EA9 / Entladen 0x7A1A1A   (runtime, render_energy)
+#
+# Per node: transparent container centred on the node; children aligned within.
+#   container x = cx - 120 ; y = cy - 102 ; arc Ø as above, align CENTER.
+#   z-order: icon (back, faint) → arc → kW label (front) → title → daily.
+#   Every image/label resets bg_opa + border_width (kills the default-theme box).
+obj:
+  id: sec_energy
+  width: 100%
+  height: 100%
+  bg_opa: TRANSP
+  border_width: 0
+  scrollable: false
+  pad_all: 0
+  widgets:
+
+    # ── Eigenverbrauchsanteil (daily) — top-left ──
+    - obj:
+        x: 12
+        y: 8
+        width: 240
+        height: 78
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - label: { align: TOP_LEFT, x: 4, y: 0, text: "$txt_en_autarky_label", text_font: font_label, text_color: $ink_mute, bg_opa: TRANSP, border_width: 0 }
+          - label: { id: en_eigenv_pct, align: TOP_MID, y: 26, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+
+    # ───────────── PV (single) — 400,160 r66 ─────────────
+    - obj:
+        x: 280
+        y: 58
+        width: 240
+        height: 204
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - image: { id: en_pv_icon, src: img_loading, align: CENTER, opa: 50%, bg_opa: TRANSP, border_width: 0 }
+          - arc:
+              id: en_pv_arc
+              align: CENTER
+              width: 132
+              height: 132
+              start_angle: 120
+              end_angle: 60
+              adjustable: false
+              arc_width: 10
+              arc_color: $ink_faint
+              min_value: 0
+              max_value: 100
+              value: 0
+              indicator: { arc_width: 10, arc_color: 0xE07B00 }
+          - label: { id: en_pv_kw, align: CENTER, y: 60, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+          - label: { align: TOP_MID, text: "$txt_en_pv", text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }
+
+    # ───────────── Haus (single) — 660,355 r66 ─────────────
+    - obj:
+        x: 540
+        y: 253
+        width: 240
+        height: 204
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - image: { id: en_house_icon, src: img_loading, align: CENTER, opa: 50%, bg_opa: TRANSP, border_width: 0 }
+          - arc:
+              id: en_house_arc
+              align: CENTER
+              width: 132
+              height: 132
+              start_angle: 120
+              end_angle: 60
+              adjustable: false
+              arc_width: 10
+              arc_color: $ink_faint
+              min_value: 0
+              max_value: 100
+              value: 0
+              indicator: { arc_width: 10, arc_color: 0x0E8F8F }
+          - label: { id: en_house_kw, align: CENTER, y: 60, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+          - label: { align: TOP_MID, text: "$txt_en_house", text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }
+
+    # ───────────── WP (single) — 660,145 r66 (straight above Haus) ─────────────
+    - obj:
+        x: 540
+        y: 43
+        width: 240
+        height: 204
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - image: { id: en_wp_icon, src: img_loading, align: CENTER, opa: 50%, bg_opa: TRANSP, border_width: 0 }
+          - arc:
+              id: en_wp_arc
+              align: CENTER
+              width: 132
+              height: 132
+              start_angle: 120
+              end_angle: 60
+              adjustable: false
+              arc_width: 10
+              arc_color: $ink_faint
+              min_value: 0
+              max_value: 100
+              value: 0
+              indicator: { arc_width: 10, arc_color: 0xB08900 }
+          - label: { id: en_wp_kw, align: CENTER, y: 60, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+          - label: { align: TOP_MID, text: "$txt_en_wp", text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }
+
+    # ───────────── EV (single) — 660,565 r66 (straight below Haus) ─────────────
+    - obj:
+        x: 540
+        y: 463
+        width: 240
+        height: 204
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - image: { id: en_ev_icon, src: img_loading, align: CENTER, opa: 50%, bg_opa: TRANSP, border_width: 0 }
+          - arc:
+              id: en_ev_arc
+              align: CENTER
+              width: 132
+              height: 132
+              start_angle: 120
+              end_angle: 60
+              adjustable: false
+              arc_width: 10
+              arc_color: $ink_faint
+              min_value: 0
+              max_value: 100
+              value: 0
+              indicator: { arc_width: 10, arc_color: $ok_green }
+          - label: { id: en_ev_kw, align: CENTER, y: 60, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+          - label: { align: TOP_MID, text: "$txt_en_ev", text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }
+
+    # ───────────── Netz (split) — 140,355 r66 ─────────────
+    - obj:
+        x: 20
+        y: 253
+        width: 240
+        height: 204
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - image: { id: en_grid_icon, src: img_loading, align: CENTER, opa: 50%, bg_opa: TRANSP, border_width: 0 }
+          - arc:
+              id: en_grid_arc
+              align: CENTER
+              width: 132
+              height: 132
+              start_angle: 120
+              end_angle: 60
+              adjustable: false
+              arc_width: 10
+              arc_color: $ink_faint
+              min_value: 0
+              max_value: 100
+              value: 0
+              indicator: { arc_width: 10, arc_color: 0x2F6FB0 }
+          - label: { id: en_grid_kw, align: CENTER, y: 60, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+          - label: { align: TOP_MID, text: "$txt_en_grid", text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }
+
+    # ───────────── PV-Akku (split) — 400,550 r66 ─────────────
+    - obj:
+        x: 280
+        y: 448
+        width: 240
+        height: 204
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        widgets:
+          - image: { id: en_batt_icon, src: img_loading, align: CENTER, opa: 50%, bg_opa: TRANSP, border_width: 0 }
+          - arc:
+              id: en_batt_arc
+              align: CENTER
+              width: 132
+              height: 132
+              start_angle: 120
+              end_angle: 60
+              adjustable: false
+              arc_width: 10
+              arc_color: $ink_faint
+              min_value: 0
+              max_value: 100
+              value: 0
+              indicator: { arc_width: 10, arc_color: 0x424EA9 }
+          - label: { id: en_batt_kw, align: CENTER, y: 60, text: "—", text_font: font_crimson_kw, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+          - label: { align: TOP_MID, text: "$txt_en_batt", text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }

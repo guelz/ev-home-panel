@@ -1,0 +1,29 @@
+# =============================================================================
+# EV-Panel helpers — the two SoC thresholds of the wallbox card
+# =============================================================================
+# Car unplugged and SoC ≥ idle threshold  → calm "Warten auf <car>"
+# Car unplugged and SoC <  idle threshold → red "Kabel nicht eingesteckt"
+# Car unplugged and SoC <  blink threshold → the wallbox icon blinks as well
+#
+# Deploy: PACKAGE file -> /config/packages/ (or create the same two helpers in
+# the UI: Settings → Devices & Services → Helpers → Number). Panel
+# substitutions: ha_wb_idle_soc_threshold / ha_wb_blink_soc_threshold.
+# =============================================================================
+input_number:
+  ev_idle_soc_threshold:
+    name: "EV Idle SOC Threshold"
+    min: 0
+    max: 100
+    step: 5
+    initial: 40
+    unit_of_measurement: "%"
+    mode: slider
+    icon: mdi:battery-charging-40
+  ev_blink_soc_threshold:
+    name: "EV Blink SOC Threshold"
+    min: 5
+    max: 50
+    step: 5
+    initial: 20
+    unit_of_measurement: "%"
+    mode: slider

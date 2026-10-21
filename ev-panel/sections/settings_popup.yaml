@@ -1,0 +1,134 @@
+# EV-Panel — "Laden im Normalbetrieb" popup (lvgl top_layer, above everything).
+# Opened by the gear on the wallbox card (open_settings); closes via
+# "Schliessen", a tap on the dimmed area, or 30 s without a tap
+# (scripts_settings.yaml). The two options set evcc's "Dauerhaft laden"
+# (select ${ha_wb_always_charge_select}); the active one gets a green border
+# once evcc confirms (render_settings). A seasonal setting, not a daily one.
+obj:
+  id: settings_overlay
+  width: 100%
+  height: 100%
+  align: CENTER
+  bg_color: $ink
+  bg_opa: 45%
+  border_width: 0
+  radius: 0
+  pad_all: 0
+  hidden: true
+  scrollable: false
+  on_click:
+    - script.execute: close_settings     # tap on the dimmed area
+  widgets:
+    - obj:
+        id: settings_card
+        width: 720
+        height: SIZE_CONTENT
+        align: TOP_MID
+        y: 240
+        bg_color: $paper
+        bg_opa: COVER
+        border_width: 0
+        radius: 12
+        pad_all: 28
+        clickable: true                  # swallow taps so they don't close the popup
+        scrollable: false
+        layout:
+          type: FLEX
+          flex_flow: COLUMN
+          pad_row: 18
+        widgets:
+          - label:
+              text: "$txt_settings_title"
+              text_font: font_status
+              text_color: $ink
+          - label:
+              text: "$txt_settings_hint"
+              width: 100%
+              long_mode: WRAP
+              text_font: font_crimson_meta
+              text_color: $ink_soft
+
+          - button:
+              id: always_off_btn
+              width: 100%
+              height: SIZE_CONTENT
+              bg_color: $paper
+              bg_opa: COVER
+              border_color: $ink
+              border_width: 3
+              radius: 8
+              shadow_width: 0
+              pad_all: 18
+              layout:
+                type: FLEX
+                flex_flow: COLUMN
+                pad_row: 6
+              widgets:
+                - label:
+                    text: "$txt_settings_pv_only"
+                    width: 100%
+                    long_mode: WRAP
+                    text_font: font_status
+                    text_color: $ink
+                - label:
+                    text: "$txt_settings_pv_only_sub"
+                    width: 100%
+                    long_mode: WRAP
+                    text_font: font_crimson_meta
+                    text_color: $ink_soft
+              on_click:
+                - script.execute: tap_always_off
+
+          - button:
+              id: always_on_btn
+              width: 100%
+              height: SIZE_CONTENT
+              bg_color: $paper
+              bg_opa: COVER
+              border_color: $ink
+              border_width: 3
+              radius: 8
+              shadow_width: 0
+              pad_all: 18
+              layout:
+                type: FLEX
+                flex_flow: COLUMN
+                pad_row: 6
+              widgets:
+                - label:
+                    text: "$txt_settings_grid_pv"
+                    width: 100%
+                    long_mode: WRAP
+                    text_font: font_status
+                    text_color: $ink
+                - label:
+                    text: "$txt_settings_grid_pv_sub"
+                    width: 100%
+                    long_mode: WRAP
+                    text_font: font_crimson_meta
+                    text_color: $ink_soft
+              on_click:
+                - script.execute: tap_always_on
+
+          - button:
+              id: settings_close_btn
+              width: 100%
+              height: 64
+              bg_color: $paper
+              bg_opa: COVER
+              border_color: $ink
+              border_width: 2
+              radius: 8
+              shadow_width: 0
+              layout:
+                type: FLEX
+                flex_flow: ROW
+                flex_align_main: CENTER
+                flex_align_cross: CENTER
+              widgets:
+                - label:
+                    text: "$txt_settings_close"
+                    text_font: font_status
+                    text_color: $ink
+              on_click:
+                - script.execute: close_settings

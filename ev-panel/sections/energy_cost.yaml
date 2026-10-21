@@ -1,0 +1,74 @@
+# EV-Panel — §Strom heute (energy page, LOWER half y 640–1220; statusbar below).
+# Daily energy table: per-source kWh (Energie) + grid CHF (Kosten). EV ("Niro")
+# and heat pump ("Heizung & Warmwasser") are indented breakdowns UNDER Haus to
+# avoid double-counting once dash_house_consumption becomes total site load.
+# Value cells (ec_*) are filled by render_energy_cost (common/scripts_render.yaml).
+# Swatch colours = energy-flow single source of truth (see energy.yaml header).
+# Right-aligned numeric columns: Energie right edge x576, Kosten right edge x776.
+obj:
+  id: sec_energy_cost
+  x: 0
+  y: 650
+  width: 100%
+  height: 580
+  bg_opa: TRANSP
+  border_width: 0
+  scrollable: false
+  pad_all: 0
+  widgets:
+    # ── Header row + divider ──
+    - label: { text: "$txt_ec_title", align: TOP_LEFT, x: 24, y: 14, text_font: font_section_title, text_color: $ink_mute, text_letter_space: 3, bg_opa: TRANSP, border_width: 0 }
+    - label: { text: "$txt_ec_col_energy", align: TOP_RIGHT, x: -224, y: 18, text_font: font_label, text_color: $ink_mute, bg_opa: TRANSP, border_width: 0 }
+    - label: { text: "$txt_ec_col_cost",  align: TOP_RIGHT, x: -24,  y: 18, text_font: font_label, text_color: $ink_mute, bg_opa: TRANSP, border_width: 0 }
+    - obj:   { x: 24, y: 52, width: 752, height: 2, bg_color: $paper_edge, bg_opa: COVER, border_width: 0, radius: 0 }
+
+    # ── Solar Ertrag ──
+    - obj:   { x: 24, y: 73, width: 30, height: 18, radius: 4, bg_color: 0xE07B00, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_pv", align: TOP_LEFT, x: 64, y: 70, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_pv_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 70, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── Batterie geladen ──
+    - obj:   { x: 24, y: 117, width: 30, height: 18, radius: 4, bg_color: 0x424EA9, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_batt_in", align: TOP_LEFT, x: 64, y: 114, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_batt_in_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 114, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── Batterie entladen ──
+    - obj:   { x: 24, y: 161, width: 30, height: 18, radius: 4, bg_color: 0x7A1A1A, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_batt_out", align: TOP_LEFT, x: 64, y: 158, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_batt_out_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 158, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── Batterie Total (indented, no swatch) ──
+    - label: { text: "$txt_ec_batt_total", align: TOP_LEFT, x: 96, y: 202, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_batt_total_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 202, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+
+    # ── vom Netz importiert ──
+    - obj:   { x: 24, y: 249, width: 30, height: 18, radius: 4, bg_color: 0xA81D1D, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_grid_in", align: TOP_LEFT, x: 64, y: 246, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_grid_in_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 246, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_grid_in_chf, text: "—", align: TOP_RIGHT, x: -24,  y: 246, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── ins Netz exportiert ──
+    - obj:   { x: 24, y: 293, width: 30, height: 18, radius: 4, bg_color: 0x2F6FB0, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_grid_out", align: TOP_LEFT, x: 64, y: 290, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_grid_out_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 290, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_grid_out_chf, text: "—", align: TOP_RIGHT, x: -24,  y: 290, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── Netz Total (indented, emphasized colour) ──
+    - label: { text: "$txt_ec_grid_total", align: TOP_LEFT, x: 96, y: 334, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_grid_total_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 334, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_grid_total_chf, text: "—", align: TOP_RIGHT, x: -24,  y: 334, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+
+    # ── Haus ──
+    - obj:   { x: 24, y: 395, width: 30, height: 18, radius: 4, bg_color: 0x0E8F8F, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_house", align: TOP_LEFT, x: 64, y: 392, text_font: font_label, text_color: $ink, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_haus_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 392, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── – Heizung & Warmwasser (indented + swatch) ──
+    - obj:   { x: 64, y: 439, width: 30, height: 18, radius: 4, bg_color: 0xB08900, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_wp", align: TOP_LEFT, x: 104, y: 436, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_heiz_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 436, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+
+    # ── – Niro geladen (indented + swatch) ──
+    - obj:   { x: 64, y: 483, width: 30, height: 18, radius: 4, bg_color: $ok_green, bg_opa: COVER, border_width: 0 }
+    - label: { text: "$txt_ec_ev", align: TOP_LEFT, x: 104, y: 480, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }
+    - label: { id: ec_niro_kwh, text: "—", align: TOP_RIGHT, x: -224, y: 480, text_font: font_label, text_color: $ink_soft, bg_opa: TRANSP, border_width: 0 }

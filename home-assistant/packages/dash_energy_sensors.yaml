@@ -1,0 +1,300 @@
+# =============================================================================
+# Custom Energy-Dashboard ENERGY sensors (kWh)  —  PEES/STAT replacement
+# =============================================================================
+# Riemann-sum integration of the dash_* POWER sensors into kWh, plus daily /
+# monthly / yearly utility-meter cycles. Fully sourced from the dash_* power
+# layer (which itself derives only from the native huawei_solar integration),
+# so this has NO dependency on the huawei_solar_pees / _stat packages.
+#
+# Deploy: this is a PACKAGE file -> place in /config/packages/ (loaded via
+#   homeassistant:
+#     packages: !include_dir_named packages
+# which is already active for the PEES packages.
+#
+# Per flow you get 4 entities:
+#   sensor.dash_<flow>_energy          lifetime total (kWh, for HA Energy Dash)
+#   sensor.dash_<flow>_energy_daily    daily cycle
+#   sensor.dash_<flow>_energy_monthly  monthly cycle
+#   sensor.dash_<flow>_energy_yearly   yearly cycle
+#
+# 12 flows = 6 base totals + 6 directional splits:
+#   pv_input, grid_import, grid_export, battery_charge, battery_discharge,
+#   house_consumption, pv_to_house, pv_to_batteries, pv_to_grid,
+#   grid_to_house, grid_to_batteries, battery_to_house
+#
+# NOTE: Riemann integration (platform: integration) and utility_meter are NOT
+# reloaded by template.reload — they need homeassistant.reload_all or a restart.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# RIEMANN INTEGRATION  (W -> kWh, method: left to match PEES behaviour)
+# -----------------------------------------------------------------------------
+sensor:
+  - platform: integration
+    source: sensor.dash_pv_input_power
+    name: "Dash PV Input Energy"
+    unique_id: dash_pv_input_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_grid_import_power
+    name: "Dash Grid Import Energy"
+    unique_id: dash_grid_import_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_grid_export_power
+    name: "Dash Grid Export Energy"
+    unique_id: dash_grid_export_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_battery_charge_power
+    name: "Dash Battery Charge Energy"
+    unique_id: dash_battery_charge_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_battery_discharge_power
+    name: "Dash Battery Discharge Energy"
+    unique_id: dash_battery_discharge_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_house_consumption
+    name: "Dash House Consumption Energy"
+    unique_id: dash_house_consumption_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_pv_to_house
+    name: "Dash PV to House Energy"
+    unique_id: dash_pv_to_house_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_pv_to_batteries
+    name: "Dash PV to Batteries Energy"
+    unique_id: dash_pv_to_batteries_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_pv_to_grid
+    name: "Dash PV to Grid Energy"
+    unique_id: dash_pv_to_grid_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_grid_to_house
+    name: "Dash Grid to House Energy"
+    unique_id: dash_grid_to_house_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_grid_to_batteries
+    name: "Dash Grid to Batteries Energy"
+    unique_id: dash_grid_to_batteries_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+  - platform: integration
+    source: sensor.dash_battery_to_house
+    name: "Dash Battery to House Energy"
+    unique_id: dash_battery_to_house_energy
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 3
+
+# -----------------------------------------------------------------------------
+# UTILITY METERS  (daily / monthly / yearly cycles per flow)
+# -----------------------------------------------------------------------------
+utility_meter:
+  # --- PV input ---
+  dash_pv_input_energy_daily:
+    source: sensor.dash_pv_input_energy
+    name: "Dash PV Input Energy Daily"
+    cycle: daily
+  dash_pv_input_energy_monthly:
+    source: sensor.dash_pv_input_energy
+    name: "Dash PV Input Energy Monthly"
+    cycle: monthly
+  dash_pv_input_energy_yearly:
+    source: sensor.dash_pv_input_energy
+    name: "Dash PV Input Energy Yearly"
+    cycle: yearly
+
+  # --- Grid import ---
+  dash_grid_import_energy_daily:
+    source: sensor.dash_grid_import_energy
+    name: "Dash Grid Import Energy Daily"
+    cycle: daily
+  dash_grid_import_energy_monthly:
+    source: sensor.dash_grid_import_energy
+    name: "Dash Grid Import Energy Monthly"
+    cycle: monthly
+  dash_grid_import_energy_yearly:
+    source: sensor.dash_grid_import_energy
+    name: "Dash Grid Import Energy Yearly"
+    cycle: yearly
+
+  # --- Grid export ---
+  dash_grid_export_energy_daily:
+    source: sensor.dash_grid_export_energy
+    name: "Dash Grid Export Energy Daily"
+    cycle: daily
+  dash_grid_export_energy_monthly:
+    source: sensor.dash_grid_export_energy
+    name: "Dash Grid Export Energy Monthly"
+    cycle: monthly
+  dash_grid_export_energy_yearly:
+    source: sensor.dash_grid_export_energy
+    name: "Dash Grid Export Energy Yearly"
+    cycle: yearly
+
+  # --- Battery charge ---
+  dash_battery_charge_energy_daily:
+    source: sensor.dash_battery_charge_energy
+    name: "Dash Battery Charge Energy Daily"
+    cycle: daily
+  dash_battery_charge_energy_monthly:
+    source: sensor.dash_battery_charge_energy
+    name: "Dash Battery Charge Energy Monthly"
+    cycle: monthly
+  dash_battery_charge_energy_yearly:
+    source: sensor.dash_battery_charge_energy
+    name: "Dash Battery Charge Energy Yearly"
+    cycle: yearly
+
+  # --- Battery discharge ---
+  dash_battery_discharge_energy_daily:
+    source: sensor.dash_battery_discharge_energy
+    name: "Dash Battery Discharge Energy Daily"
+    cycle: daily
+  dash_battery_discharge_energy_monthly:
+    source: sensor.dash_battery_discharge_energy
+    name: "Dash Battery Discharge Energy Monthly"
+    cycle: monthly
+  dash_battery_discharge_energy_yearly:
+    source: sensor.dash_battery_discharge_energy
+    name: "Dash Battery Discharge Energy Yearly"
+    cycle: yearly
+
+  # --- House consumption ---
+  dash_house_consumption_energy_daily:
+    source: sensor.dash_house_consumption_energy
+    name: "Dash House Consumption Energy Daily"
+    cycle: daily
+  dash_house_consumption_energy_monthly:
+    source: sensor.dash_house_consumption_energy
+    name: "Dash House Consumption Energy Monthly"
+    cycle: monthly
+  dash_house_consumption_energy_yearly:
+    source: sensor.dash_house_consumption_energy
+    name: "Dash House Consumption Energy Yearly"
+    cycle: yearly
+
+  # --- PV -> House ---
+  dash_pv_to_house_energy_daily:
+    source: sensor.dash_pv_to_house_energy
+    name: "Dash PV to House Energy Daily"
+    cycle: daily
+  dash_pv_to_house_energy_monthly:
+    source: sensor.dash_pv_to_house_energy
+    name: "Dash PV to House Energy Monthly"
+    cycle: monthly
+  dash_pv_to_house_energy_yearly:
+    source: sensor.dash_pv_to_house_energy
+    name: "Dash PV to House Energy Yearly"
+    cycle: yearly
+
+  # --- PV -> Batteries ---
+  dash_pv_to_batteries_energy_daily:
+    source: sensor.dash_pv_to_batteries_energy
+    name: "Dash PV to Batteries Energy Daily"
+    cycle: daily
+  dash_pv_to_batteries_energy_monthly:
+    source: sensor.dash_pv_to_batteries_energy
+    name: "Dash PV to Batteries Energy Monthly"
+    cycle: monthly
+  dash_pv_to_batteries_energy_yearly:
+    source: sensor.dash_pv_to_batteries_energy
+    name: "Dash PV to Batteries Energy Yearly"
+    cycle: yearly
+
+  # --- PV -> Grid ---
+  dash_pv_to_grid_energy_daily:
+    source: sensor.dash_pv_to_grid_energy
+    name: "Dash PV to Grid Energy Daily"
+    cycle: daily
+  dash_pv_to_grid_energy_monthly:
+    source: sensor.dash_pv_to_grid_energy
+    name: "Dash PV to Grid Energy Monthly"
+    cycle: monthly
+  dash_pv_to_grid_energy_yearly:
+    source: sensor.dash_pv_to_grid_energy
+    name: "Dash PV to Grid Energy Yearly"
+    cycle: yearly
+
+  # --- Grid -> House ---
+  dash_grid_to_house_energy_daily:
+    source: sensor.dash_grid_to_house_energy
+    name: "Dash Grid to House Energy Daily"
+    cycle: daily
+  dash_grid_to_house_energy_monthly:
+    source: sensor.dash_grid_to_house_energy
+    name: "Dash Grid to House Energy Monthly"
+    cycle: monthly
+  dash_grid_to_house_energy_yearly:
+    source: sensor.dash_grid_to_house_energy
+    name: "Dash Grid to House Energy Yearly"
+    cycle: yearly
+
+  # --- Grid -> Batteries ---
+  dash_grid_to_batteries_energy_daily:
+    source: sensor.dash_grid_to_batteries_energy
+    name: "Dash Grid to Batteries Energy Daily"
+    cycle: daily
+  dash_grid_to_batteries_energy_monthly:
+    source: sensor.dash_grid_to_batteries_energy
+    name: "Dash Grid to Batteries Energy Monthly"
+    cycle: monthly
+  dash_grid_to_batteries_energy_yearly:
+    source: sensor.dash_grid_to_batteries_energy
+    name: "Dash Grid to Batteries Energy Yearly"
+    cycle: yearly
+
+  # --- Battery -> House ---
+  dash_battery_to_house_energy_daily:
+    source: sensor.dash_battery_to_house_energy
+    name: "Dash Battery to House Energy Daily"
+    cycle: daily
+  dash_battery_to_house_energy_monthly:
+    source: sensor.dash_battery_to_house_energy
+    name: "Dash Battery to House Energy Monthly"
+    cycle: monthly
+  dash_battery_to_house_energy_yearly:
+    source: sensor.dash_battery_to_house_energy
+    name: "Dash Battery to House Energy Yearly"
+    cycle: yearly

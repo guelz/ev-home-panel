@@ -1,0 +1,95 @@
+# EV-Panel — §Weather (page 3, UPPER half y 0–640). 5-day forecast row.
+# Data: HA template sensors from templates/ev_panel_weather.yaml
+# (sensor.evp_weather_d{0..4}_{high,low,cond}); refresh_weather
+# (scripts_render.yaml) drives day names, condition icons (online_image
+# img_wx_*, swapped by condition) and temps.
+# Column layout: day name (Heute/Mo/…) · weather icon · "high° / low°".
+obj:
+  id: sec_weather
+  x: 0
+  y: 0
+  width: 100%
+  height: 640
+  bg_opa: TRANSP
+  border_width: 0
+  scrollable: false
+  pad_all: 0
+  widgets:
+    - label:
+        text: "$txt_we_title"
+        align: TOP_MID
+        y: 46
+        text_font: font_section_title
+        text_color: $ink_mute
+        text_letter_space: 4
+    - obj:
+        x: 0
+        y: 160
+        width: 100%
+        height: 340
+        bg_opa: TRANSP
+        border_width: 0
+        scrollable: false
+        pad_all: 0
+        layout: { type: FLEX, flex_flow: ROW, flex_align_main: SPACE_EVENLY, flex_align_cross: CENTER }
+        widgets:
+          - obj:
+              width: 148
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              scrollable: false
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: COLUMN, flex_align_cross: CENTER, pad_row: 20 }
+              widgets:
+                - label: { id: we_day_0,  text: "$txt_we_today", text_font: font_section_title, text_color: $ink_soft, text_letter_space: 2 }
+                - image: { id: we_icon_0, src: img_loading, bg_opa: TRANSP, border_width: 0 }
+                - label: { id: we_temp_0, text: "—", text_font: font_crimson_meta, text_color: $ink_mute }
+          - obj:
+              width: 148
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              scrollable: false
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: COLUMN, flex_align_cross: CENTER, pad_row: 20 }
+              widgets:
+                - label: { id: we_day_1,  text: "—", text_font: font_section_title, text_color: $ink_soft, text_letter_space: 2 }
+                - image: { id: we_icon_1, src: img_loading, bg_opa: TRANSP, border_width: 0 }
+                - label: { id: we_temp_1, text: "—", text_font: font_crimson_meta, text_color: $ink_mute }
+          - obj:
+              width: 148
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              scrollable: false
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: COLUMN, flex_align_cross: CENTER, pad_row: 20 }
+              widgets:
+                - label: { id: we_day_2,  text: "—", text_font: font_section_title, text_color: $ink_soft, text_letter_space: 2 }
+                - image: { id: we_icon_2, src: img_loading, bg_opa: TRANSP, border_width: 0 }
+                - label: { id: we_temp_2, text: "—", text_font: font_crimson_meta, text_color: $ink_mute }
+          - obj:
+              width: 148
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              scrollable: false
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: COLUMN, flex_align_cross: CENTER, pad_row: 20 }
+              widgets:
+                - label: { id: we_day_3,  text: "—", text_font: font_section_title, text_color: $ink_soft, text_letter_space: 2 }
+                - image: { id: we_icon_3, src: img_loading, bg_opa: TRANSP, border_width: 0 }
+                - label: { id: we_temp_3, text: "—", text_font: font_crimson_meta, text_color: $ink_mute }
+          - obj:
+              width: 148
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              scrollable: false
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: COLUMN, flex_align_cross: CENTER, pad_row: 20 }
+              widgets:
+                - label: { id: we_day_4,  text: "—", text_font: font_section_title, text_color: $ink_soft, text_letter_space: 2 }
+                - image: { id: we_icon_4, src: img_loading, bg_opa: TRANSP, border_width: 0 }
+                - label: { id: we_temp_4, text: "—", text_font: font_crimson_meta, text_color: $ink_mute }

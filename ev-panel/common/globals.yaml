@@ -1,0 +1,68 @@
+# EV-Panel — global state cache (UI + HA-fed state).
+
+globals:
+  - id: climate_active
+    type: bool
+    initial_value: 'false'
+  # Displayed SOC — last known-good. HA Kia sensor goes 'unavailable' periodically;
+  # we keep this so the battery never snaps to 0 on a dropout.
+  - id: last_soc
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  # ── Multi-page navigation state ──
+  - id: current_page
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: page_count
+    type: int
+    restore_value: no
+    initial_value: '3'   # ① EV+Wallbox · ② Energy · ③ Weather+Cistern
+
+  # Swipe-gesture scratch — written by touchscreen on_touch/on_update,
+  # read by on_release to decide next/prev page.
+  - id: swipe_active
+    type: bool
+    initial_value: 'false'
+  - id: swipe_start_x
+    type: int
+    initial_value: '0'
+  - id: swipe_last_x
+    type: int
+    initial_value: '0'
+
+  # ── Phase 2: online_image asset load state ──
+  - id: assets_loaded
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # EV wallbox idle-blink flag — set by render_wallbox (unplugged + plan tomorrow),
+  # read by the 500ms blink interval (http_polling.yaml) to pulse wb_icon opacity.
+  - { id: ev_blink_active, type: bool, restore_value: no, initial_value: 'false' }
+
+  # ── Phase 4b: per-line LED chase phase accumulators ──
+  - { id: ph_pvbatt,    type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_pvgrid,    type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_pvhouse,   type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_battgrid,  type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_batthouse, type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_gridhouse, type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_hphouse,   type: float, restore_value: no, initial_value: '0' }
+  - { id: ph_evhouse,   type: float, restore_value: no, initial_value: '0' }
+
+  # JVL optimistic state — set true on tap so the border flips instantly;
+  # cleared when the select's real state pushes back via wb_mode_s.
+  - { id: wb_schnell_optimistic, type: bool, restore_value: no, initial_value: 'false' }
+
+  # Ladeplan button: green right after a tap that SETS the plan, until the
+  # plan sensor pushes back — or 20 s pass (plan_optimistic_timeout), because
+  # evcc only reports the plan once the car is identified at the wallbox.
+  - { id: plan_optimistic, type: bool, restore_value: no, initial_value: 'false' }
+
+  # windows_open removed 2026-08-03: the Fenster button is now two stateless
+  # buttons (win_open_btn / win_close_btn). The kia_uvo window sensors never
+  # report "open" on this car, so there is nothing to reconcile a remembered
+  # state against — see common/scripts_lock.yaml.

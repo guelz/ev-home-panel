@@ -1,0 +1,87 @@
+# EV-Panel — Lock module. Reflects an HA lock entity on the §5 Lock button and
+# drives lock-only actions (unlock removed — the car rejects remote unlock
+# from third-party apps and auto-relocks after 30 s anyway).
+# Also holds tap_win_open / tap_win_close — two stateless actions behind the
+# win_open_btn / win_close_btn buttons (sections/lock.yaml). They press the
+# kia_uvo open/close-all-windows buttons directly. No toggle, no local state:
+# the car's window sensors never report "open" (verified 2026-08-03), so any
+# remembered state would drift on panel reboot or after an HA-side press.
+# The 3 s green border is a tap acknowledgement, NOT vehicle state.
+# Required substitution: ${ha_lock_entity}  (e.g. lock.niro_door_lock)
+
+text_sensor:
+  - platform: homeassistant
+    id: lock_state
+    entity_id: ${ha_lock_entity}
+    on_value:
+      - script.execute: render_lock
+
+script:
+  # Paint the lock button from lock_state. Icon src only swapped once loaded
+  # (placeholder until then); border colour carries the state accent.
+  - id: render_lock
+    then:
+      - lambda: |-
+          std::string s = id(lock_state).state;
+          lv_color_t accent;
+          if (s == "locked") {
+            if (id(img_lock_closed)->is_loaded())
+              lv_img_set_src(id(lock_icon), id(img_lock_closed)->get_lv_image_dsc());
+            lv_label_set_text(id(lock_label), "${txt_lock_locked}");
+            accent = lv_color_hex($ink);
+          } else if (s == "unlocked") {
+            if (id(img_lock_open)->is_loaded())
+              lv_img_set_src(id(lock_icon), id(img_lock_open)->get_lv_image_dsc());
+            lv_label_set_text(id(lock_label), "${txt_lock_unlocked}");
+            accent = lv_color_hex($warn_red);
+          } else if (s == "locking" || s == "unlocking") {
+            lv_label_set_text(id(lock_label), "${txt_lock_busy}");
+            accent = lv_color_hex($ink_mute);
+          } else {
+            lv_label_set_text(id(lock_label), "—");
+            accent = lv_color_hex($ink_faint);
+          }
+          lv_obj_set_style_border_color(id(lock_btn), accent, 0);
+
+  # Tap: lock when not locked. Unlock was removed — the car rejects remote
+  # unlock from third-party apps (and auto-relocks after 30 s anyway), so a
+  # tap while locked is a silent no-op. State display (render_lock) unchanged.
+  - id: tap_lock
+    then:
+      - if:
+          condition:
+            lambda: 'return id(lock_state).state != "locked";'
+          then:
+            - script.execute: beep_click
+            - homeassistant.action:
+                action: lock.lock
+                data:
+                  entity_id: ${ha_lock_entity}
+
+  # Fenster auf — presses the kia_uvo open-all-windows button. The car only
+  # acts on the two front windows. mode: restart so a second tap during the
+  # acknowledgement window re-sends instead of being swallowed.
+  - id: tap_win_open
+    mode: restart
+    then:
+      - script.execute: beep_click
+      - lambda: 'lv_obj_set_style_border_color(id(win_open_btn), lv_color_hex($ok_green), 0);'
+      - homeassistant.action:
+          action: button.press
+          data:
+            entity_id: ${ha_lock_windows_open_button}
+      - delay: 3s
+      - lambda: 'lv_obj_set_style_border_color(id(win_open_btn), lv_color_hex($ink), 0);'
+
+  # Fenster zu — presses the kia_uvo close-all-windows button.
+  - id: tap_win_close
+    mode: restart
+    then:
+      - script.execute: beep_click
+      - lambda: 'lv_obj_set_style_border_color(id(win_close_btn), lv_color_hex($ok_green), 0);'
+      - homeassistant.action:
+          action: button.press
+          data:
+            entity_id: ${ha_lock_windows_close_button}
+      - delay: 3s
+      - lambda: 'lv_obj_set_style_border_color(id(win_close_btn), lv_color_hex($ink), 0);'

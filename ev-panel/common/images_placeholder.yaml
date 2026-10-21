@@ -1,0 +1,15 @@
+# EV-Panel — flash placeholder for online_image widgets (Phase 2).
+#
+# online_image buffers are null until downloaded, and under LVGL the placeholder
+# fallback is ignored (get_lv_img_dsc() returns a null/0x0/UNKNOWN descriptor) —
+# drawing that hard-faults the P4. So EVERY image widget starts on this tiny
+# transparent flash image and only swaps to its online_image once is_loaded()
+# is true (guarded in render_wallbox / render_vehicle / refresh_after_assets).
+#
+# 8x8 RGBA transparent → ~192 B in flash. Invisible until the real art lands.
+#
+# `platform: file` since ESPHome 2026.x — the bare `image:` form is deprecated
+# and goes away in 2027.1.0. This list merges with the online_image entries in
+# images_online.yaml, which are platforms of the same `image:` component.
+image:
+  - { platform: file, file: "${icons_path}/loading.png", id: img_loading, type: RGB565, transparency: alpha_channel, resize: 8x8 }

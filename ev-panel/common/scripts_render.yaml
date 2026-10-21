@@ -1,0 +1,489 @@
+# EV-Panel — render scripts that repaint LVGL widgets from globals.
+# render_wallbox  → §2 Wallbox section (4-state machine)
+# render_vehicle  → §3 Vehicle section (battery icon + SOC + range)
+# blink_warning   → §2 wallbox status flash for HA-driven warnings (e.g. "Kabel vergessen")
+
+script:
+  # ─── §3 Vehicle: battery icon (4-quartile) + SOC text + range km ──────────
+  # SOC bucket → battery icon: 0-24→25, 25-49→50, 50-74→75, 75-100→100.
+  # NOTE: pass id(img_X)->get_lv_image_dsc() — passing &id(img_X) gives Image* const*
+  # which LVGL misreads as a filename ("unknown driver letter" runtime error).
+  - id: render_vehicle
+    then:
+      - lambda: |-
+          // SOC source priority: HA Kia traction SOC > last known-good value.
+          int soc;
+          if (id(ha_soc).has_state() && !std::isnan(id(ha_soc).state)) {
+            soc = (int)(id(ha_soc).state + 0.5f);
+            id(last_soc) = soc;
+          } else {
+            soc = id(last_soc);
+          }
+
+          // Pick the bucket image, but only swap onto it once its online_image
+          // buffer is downloaded — drawing an unloaded online_image hard-faults.
+          auto* bat = id(img_battery_100);
+          if      (soc < 25) bat = id(img_battery_25);
+          else if (soc < 50) bat = id(img_battery_50);
+          else if (soc < 75) bat = id(img_battery_75);
+          if (bat->is_loaded()) lv_img_set_src(id(bat_icon), bat->get_lv_image_dsc());
+
+          char soc_buf[8];
+          snprintf(soc_buf, sizeof(soc_buf), "%d", soc);
+          lv_label_set_text(id(bat_pct), soc_buf);
+
+          if (id(ha_range).has_state()) {
+            char range_buf[8];
+            snprintf(range_buf, sizeof(range_buf), "%d", (int)id(ha_range).state);
+            lv_label_set_text(id(range_num), range_buf);
+          }
+
+  # ─── §2 Wallbox: state machine driven by Warp3-via-HA sensors ──────────────
+  # State table:
+  #   error (warp3_2iw7_error)            → Wallbox-Fehler (red)
+  #   !cable                              → unplugged (idle / red warn / blink)
+  #   cable && charging && mode Schnell   → Schnellladen
+  #   cable && charging                   → Lädt mit Solarstrom
+  #   cable && !charging && mode Smart    → Wartet auf Sonne
+  #   cable && !charging && mode Aus      → Laden pausiert
+  #   cable && !charging && otherwise     → Bereit zum Laden
+  - id: render_wallbox
+    then:
+      - lambda: |-
+          bool connected   = id(wb_cable_s).has_state()    && id(wb_cable_s).state;
+          bool charging    = id(wb_charging_s).has_state() && id(wb_charging_s).state;
+          std::string mode = id(wb_mode_s).has_state() ? id(wb_mode_s).state : "";
+          bool schnell     = (mode == "${evcc_mode_now}") || id(wb_schnell_optimistic);
+
+          // Default: no idle-blink, icon fully opaque. The 500ms blink interval
+          // only dims wb_icon while ev_blink_active is true (set below).
+          id(ev_blink_active) = false;
+          lv_obj_set_style_opa(id(wb_icon), LV_OPA_COVER, 0);
+          // Default: PV badge hidden, sub-line visible — only the charging state
+          // below changes them.
+          lv_obj_add_flag(id(wb_power_pv), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_clear_flag(id(wb_sub), LV_OBJ_FLAG_HIDDEN);
+
+          auto* wb = id(img_plugged_in);
+
+          if (id(wb_error_s).has_state() && id(wb_error_s).state) {
+            // ── Wallbox error (charger_state 4 via binary_sensor.warp3_2iw7_error) ──
+            wb = id(img_unplugged);
+            lv_label_set_text(id(wb_status_label), "${txt_wb_error}");
+            lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($warn_red), 0);
+            lv_label_set_text(id(wb_sub), "${txt_wb_error_sub}");
+            lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+          } else if (!connected) {
+            // ── unplugged: idle (SOC ok) / red warn (SOC low) / +blink (SOC very low) ──
+            // SOC source priority matches render_vehicle: HA Kia > last good.
+            int soc;
+            if (id(ha_soc).has_state() && !std::isnan(id(ha_soc).state)) soc = (int)(id(ha_soc).state + 0.5f);
+            else soc = id(last_soc);
+            float thr_idle  = (id(ev_idle_threshold).has_state() && !std::isnan(id(ev_idle_threshold).state))
+                              ? id(ev_idle_threshold).state : 40.0f;
+            float thr_blink = (id(ev_blink_threshold).has_state() && !std::isnan(id(ev_blink_threshold).state))
+                              ? id(ev_blink_threshold).state : 20.0f;
+
+            char sub[44];
+            if (soc >= (int)lroundf(thr_idle)) {                 // enough charge → calm idle
+              wb = id(img_idle);
+              lv_label_set_text(id(wb_status_label), "${txt_wb_idle}");
+              lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($ink), 0);
+              snprintf(sub, sizeof(sub), "${txt_wb_idle_sub_fmt}", soc);
+              lv_label_set_text(id(wb_sub), sub);
+            } else {                                             // low charge → red warning
+              wb = id(img_unplugged);
+              lv_label_set_text(id(wb_status_label), "${txt_wb_unplugged}");
+              lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($warn_red), 0);
+              snprintf(sub, sizeof(sub), "${txt_wb_unplugged_sub_fmt}", soc);
+              lv_label_set_text(id(wb_sub), sub);
+              if (soc < (int)lroundf(thr_blink))
+                id(ev_blink_active) = true;                      // very low → blink interval pulses wb_icon
+            }
+            lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+          } else if (charging) {
+            wb = id(img_surplus_charging);
+            lv_label_set_text(id(wb_status_label), schnell ? "${txt_wb_fast}" : "${txt_wb_charging}");
+            lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($ink), 0);
+            // While charging the badges say where the power comes from — no sub-line.
+            lv_obj_add_flag(id(wb_sub), LV_OBJ_FLAG_HIDDEN);
+            // Charging power from the Warp3 meter (W), split by evcc's solar share of
+            // the loadpoints: PV = power × share, Netz = the rest. A part below 100 W
+            // is hidden (if both are, the larger one shows). No share (evcc down) →
+            // one badge with the total, never a guessed split. Total < 100 W → none.
+            float w = (id(en_ev_power).has_state() && !std::isnan(id(en_ev_power).state))
+                      ? id(en_ev_power).state : 0.0f;
+            bool share_ok = id(wb_green_share_s).has_state() && !std::isnan(id(wb_green_share_s).state);
+            char buf[24];
+            if (w <= 100.0f) {
+              lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+            } else if (!share_ok) {
+              snprintf(buf, sizeof(buf), "${txt_kw_fmt}", w / 1000.0f);
+              lv_label_set_text(id(wb_power), buf);
+              lv_obj_clear_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+            } else {
+              float share = id(wb_green_share_s).state / 100.0f;
+              if (share < 0.0f) share = 0.0f; else if (share > 1.0f) share = 1.0f;
+              float pv = w * share, grid = w - pv;
+              bool show_grid = grid >= 100.0f, show_pv = pv >= 100.0f;
+              if (!show_grid && !show_pv) { if (grid >= pv) show_grid = true; else show_pv = true; }
+              if (show_grid) {
+                snprintf(buf, sizeof(buf), "${txt_wb_grid_fmt}", grid / 1000.0f);
+                lv_label_set_text(id(wb_power), buf);
+                lv_obj_clear_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+              } else {
+                lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+              }
+              if (show_pv) {
+                snprintf(buf, sizeof(buf), "${txt_wb_pv_fmt}", pv / 1000.0f);
+                lv_label_set_text(id(wb_power_pv), buf);
+                lv_obj_clear_flag(id(wb_power_pv), LV_OBJ_FLAG_HIDDEN);
+              }
+            }
+          } else if (mode == "${evcc_mode_smart}") {
+            wb = id(img_waiting);
+            lv_label_set_text(id(wb_status_label), "${txt_wb_waiting}");
+            lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($ink), 0);
+            lv_label_set_text(id(wb_sub), "${txt_wb_waiting_sub}");
+            lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+          } else if (mode == "${evcc_mode_off}") {
+            wb = id(img_plugged_in);
+            lv_label_set_text(id(wb_status_label), "${txt_wb_paused}");
+            lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($ink), 0);
+            lv_label_set_text(id(wb_sub), "${txt_wb_paused_sub}");
+            lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            wb = id(img_plugged_in);
+            lv_label_set_text(id(wb_status_label), "${txt_wb_ready}");
+            lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($ink), 0);
+            lv_label_set_text(id(wb_sub), "${txt_wb_ready_sub}");
+            lv_obj_add_flag(id(wb_power), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          // Swap icon only once its online_image buffer is downloaded (else hard-fault).
+          if (wb->is_loaded()) lv_img_set_src(id(wb_icon), wb->get_lv_image_dsc());
+
+  # ─── HA service: blink wallbox section with custom headline ───────────────
+  # Called by HA via api.services.blink_warning (defined in device YAML).
+  # When the blink loop ends, render_wallbox restores the actual state.
+  - id: blink_warning
+    mode: restart
+    parameters:
+      headline: string
+      duration: int
+    then:
+      - lambda: |-
+          lv_label_set_text(id(wb_status_label), headline.c_str());
+          lv_obj_set_style_text_color(id(wb_status_label), lv_color_hex($warn_red), 0);
+      - repeat:
+          count: !lambda 'return duration;'
+          then:
+            - script.execute: beep_warn
+            - lambda: |-
+                lv_obj_add_flag(id(wb_status_label), LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(id(wb_icon), LV_OBJ_FLAG_HIDDEN);
+            - delay: 500ms
+            - lambda: |-
+                lv_obj_clear_flag(id(wb_status_label), LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(id(wb_icon), LV_OBJ_FLAG_HIDDEN);
+            - delay: 500ms
+      - script.execute: render_wallbox
+
+  # ── §Energy page (page 2): drive arcs + centre numbers + Heute + SOC icon ──
+  # Centre labels: txt_kw_fmt ("%.1f kW") in font_crimson_kw (glyph set glyphs_kw).
+  # Every power source is W → /1000 (dash_*, the three WP phases, and the Warp3
+  # wallbox meter). Nothing arrives in kW any more.
+  - id: render_energy
+    mode: restart
+    then:
+      - delay: 60ms          # coalesce bursts of sensor updates
+      - lambda: |-
+          auto val = [](esphome::sensor::Sensor* s){ return s->has_state() ? s->state : 0.0f; };
+          // single gauge: indicator fills CW from gap-left (120°); centre = magnitude
+          auto single = [](lv_obj_t* arc, lv_obj_t* lbl, float kw, float maxkw){
+            float f = kw/maxkw; if(f<0)f=0; if(f>1)f=1;
+            int e = ((int)lroundf(120.0f + 300.0f*f)) % 360;
+            lv_arc_set_angles(arc, 120, e);                  // (120,120) at f≈0 → nothing
+            char b[14]; snprintf(b,sizeof(b), "${txt_kw_fmt}", kw); lv_label_set_text(lbl, b);
+          };
+          // split gauge: zero at north (270°); PLUS draws clockwise, minus
+          // counter-clockwise; centre = signed value. Sign convention on the page:
+          // Netz + = Bezug (import), − = Einspeisung; Akku + = laden, − = entladen.
+          auto split = [](lv_obj_t* arc, lv_obj_t* lbl, float pos_kw, float pos_max,
+                          float neg_kw, float neg_max, uint32_t pos_col, uint32_t neg_col){
+            float kw = 0;
+            if(pos_kw >= neg_kw && pos_kw > 0.02f){          // plus side (cw)
+              float f = pos_kw/pos_max; if(f>1)f=1; int p = (int)lroundf(150.0f*f);
+              lv_arc_set_angles(arc, 270, (270 + p) % 360);
+              lv_obj_set_style_arc_color(arc, lv_color_hex(pos_col), LV_PART_INDICATOR);
+              kw = pos_kw;
+            } else if(neg_kw > 0.02f){                       // minus side (ccw)
+              float f = neg_kw/neg_max; if(f>1)f=1; int p = (int)lroundf(150.0f*f);
+              lv_arc_set_angles(arc, (270 - p + 360) % 360, 270);
+              lv_obj_set_style_arc_color(arc, lv_color_hex(neg_col), LV_PART_INDICATOR);
+              kw = -neg_kw;
+            } else {
+              lv_arc_set_angles(arc, 270, 270);              // idle
+            }
+            if (fabsf(kw) < 0.05f) kw = 0.0f;                // never show "-0.0"
+            char b[14]; snprintf(b,sizeof(b), "${txt_kw_fmt}", kw); lv_label_set_text(lbl, b);
+          };
+
+          // arcs + centre kW (every source is W → /1000)
+          single(id(en_pv_arc),    id(en_pv_kw),    val(id(en_pv_power))/1000.0f,  8.9f);
+          single(id(en_house_arc), id(en_house_kw), val(id(en_house_power))/1000.0f, 18.0f);
+          single(id(en_wp_arc),    id(en_wp_kw),    val(id(en_wp_power))/1000.0f,  4.0f);
+          single(id(en_ev_arc),    id(en_ev_kw),    val(id(en_ev_power))/1000.0f,  11.0f);
+          // split colors from new_energy-layout.json (they stay with the flow):
+          // Netz: Bezug red (+) / Einspeisung blue (−) — Akku: Laden blue-violet (+) / Entladen dark red (−)
+          split (id(en_grid_arc),  id(en_grid_kw),
+                 val(id(en_grid_import))/1000.0f, 12.0f, val(id(en_grid_export))/1000.0f, 8.9f,
+                 0xA81D1D, 0x2F6FB0);
+          split (id(en_batt_arc),  id(en_batt_kw),
+                 val(id(en_batt_charge))/1000.0f, 8.9f, val(id(en_batt_discharge))/1000.0f, 8.9f,
+                 0x424EA9, 0x7A1A1A);
+
+          // (per-gauge daily labels removed — daily energy lives in the Strom-heute table)
+
+          // node watermark icons (swap once loaded)
+          struct IB { lv_obj_t* w; esphome::image::Image* img; };
+          IB statics[] = {
+            { id(en_pv_icon), id(img_node_pv) }, { id(en_grid_icon), id(img_node_grid) },
+            { id(en_house_icon), id(img_node_house) }, { id(en_wp_icon), id(img_node_hp) },
+            { id(en_ev_icon), id(img_node_ev) },
+          };
+          for (auto &b : statics)
+            if (((esphome::online_image::OnlineImage*)b.img)->is_loaded())
+              lv_img_set_src(b.w, b.img->get_lv_image_dsc());
+
+          // PV-Akku icon by SOC (5 states; guarded)
+          float soc = val(id(en_batt_soc));
+          auto* bi = soc < 7  ? id(img_pv_battery_empty)
+                   : soc < 38 ? id(img_pv_battery_25)
+                   : soc < 63 ? id(img_pv_battery_50)
+                   : soc < 89 ? id(img_pv_battery_75)
+                   :            id(img_pv_battery_100);
+          if (bi->is_loaded()) lv_img_set_src(id(en_batt_icon), bi->get_lv_image_dsc());
+
+          // Eigenverbrauchsanteil (daily): label is self-consumption, formula is
+          // autarky per spec — 1 - grid_import/house_consumption, clamped 0..100.
+          if (id(en_house_daily_s).has_state() && id(en_house_daily_s).state > 0.05f) {
+            float ev = (1.0f - id(en_grid_in_daily).state / id(en_house_daily_s).state) * 100.0f;
+            if (ev < 0) ev = 0; else if (ev > 100) ev = 100;
+            char eb[8]; snprintf(eb, sizeof(eb), "%d %%", (int)lroundf(ev));
+            lv_label_set_text(id(en_eigenv_pct), eb);
+          } else {
+            lv_label_set_text(id(en_eigenv_pct), "—");
+          }
+      - script.execute: render_energy_cost
+
+  # ── §Weather (page 3): day names, MDI condition glyphs, high/low temps ──
+  # Day 0 = txt_we_today; days 1–4 from device time + offset (txt_day_0 … txt_day_6).
+  # Condition string → MDI glyph; unknown conditions fall back to the cloudy glyph.
+  - id: refresh_weather
+    mode: restart
+    then:
+      - delay: 60ms          # coalesce the burst when all 15 sensors update at once
+      - lambda: |-
+          // HA condition string → custom weather online_image (cloudy = fallback).
+          auto wx = [](const std::string& c) -> esphome::online_image::OnlineImage* {
+            if (c=="sunny")           return id(img_wx_sunny);
+            if (c=="clear-night")     return id(img_wx_clear_night);
+            if (c=="partlycloudy")    return id(img_wx_partlycloudy);
+            if (c=="fog")             return id(img_wx_fog);
+            if (c=="rainy")           return id(img_wx_rainy);
+            if (c=="pouring")         return id(img_wx_pouring);
+            if (c=="lightning")       return id(img_wx_lightning);
+            if (c=="lightning-rainy") return id(img_wx_lightning_rainy);
+            if (c=="hail")            return id(img_wx_hail);
+            if (c=="snowy")           return id(img_wx_snowy);
+            if (c=="snowy-rainy")     return id(img_wx_snowy_rainy);
+            if (c=="windy")           return id(img_wx_windy);
+            if (c=="windy-variant")   return id(img_wx_windy_variant);
+            if (c=="exceptional")     return id(img_wx_exceptional);
+            return id(img_wx_cloudy);
+          };
+          // ESPHome day_of_week: 1=So..7=Sa
+          static const char* dn[7] = {"${txt_day_0}", "${txt_day_1}", "${txt_day_2}", "${txt_day_3}", "${txt_day_4}", "${txt_day_5}", "${txt_day_6}"};
+          auto t = id(homeassistant_time).now();
+          struct Col { lv_obj_t* day; lv_obj_t* ic; lv_obj_t* temp;
+                       esphome::text_sensor::TextSensor* cond;
+                       esphome::sensor::Sensor* hi; esphome::sensor::Sensor* lo; };
+          Col cols[5] = {
+            { id(we_day_0), id(we_icon_0), id(we_temp_0), id(we_cond_0), id(we_high_0), id(we_low_0) },
+            { id(we_day_1), id(we_icon_1), id(we_temp_1), id(we_cond_1), id(we_high_1), id(we_low_1) },
+            { id(we_day_2), id(we_icon_2), id(we_temp_2), id(we_cond_2), id(we_high_2), id(we_low_2) },
+            { id(we_day_3), id(we_icon_3), id(we_temp_3), id(we_cond_3), id(we_high_3), id(we_low_3) },
+            { id(we_day_4), id(we_icon_4), id(we_temp_4), id(we_cond_4), id(we_high_4), id(we_low_4) },
+          };
+          for (int i = 0; i < 5; i++) {
+            if (i == 0)            lv_label_set_text(cols[i].day, "${txt_we_today}");
+            else if (t.is_valid()) lv_label_set_text(cols[i].day, dn[(t.day_of_week - 1 + i) % 7]);
+            else                   lv_label_set_text(cols[i].day, "—");
+            { auto* im = cols[i].cond->has_state() ? wx(cols[i].cond->state) : id(img_wx_cloudy);
+              if (im->is_loaded()) lv_img_set_src(cols[i].ic, im->get_lv_image_dsc()); }
+            if (cols[i].hi->has_state() && cols[i].lo->has_state()) {
+              char b[24];
+              snprintf(b, sizeof(b), "%.0f° / %.0f°", cols[i].hi->state, cols[i].lo->state);
+              lv_label_set_text(cols[i].temp, b);
+            } else {
+              lv_label_set_text(cols[i].temp, "—");
+            }
+          }
+
+  # ── §Cistern (page 3): big %, tank-relative waterline, litres + info rows ──
+  # The waterline is positioned RELATIVE TO ci_tank, so moving the tank moves it.
+  # Its top-left is interpolated between three offsets from the tank's top-left:
+  #   cistern_wl_100_x/_y (full) · cistern_wl_50_x/_y · cistern_wl_0_x/_y (empty)
+  - id: render_cistern
+    mode: restart
+    then:
+      - delay: 60ms
+      - lambda: |-
+          if (id(ci_fill_s).has_state()) {
+            int pct = (int)lroundf(id(ci_fill_s).state);
+            if (pct < 0) pct = 0; else if (pct > 100) pct = 100;
+            char b[12]; snprintf(b, sizeof(b), "%d %%", pct);
+            lv_label_set_text(id(ci_pct), b);
+
+            const lv_coord_t tank_x = lv_obj_get_x(id(ci_tank));
+            const lv_coord_t tank_y = lv_obj_get_y(id(ci_tank));
+
+            // Piecewise-linear between the three points: 100→50 % and 50→0 %.
+            float x0, y0, x1, y1, t;
+            if (pct >= 50) { x0 = ${cistern_wl_50_x}; y0 = ${cistern_wl_50_y};
+                             x1 = ${cistern_wl_100_x}; y1 = ${cistern_wl_100_y}; t = (pct - 50) / 50.0f; }
+            else           { x0 = ${cistern_wl_0_x}; y0 = ${cistern_wl_0_y};
+                             x1 = ${cistern_wl_50_x}; y1 = ${cistern_wl_50_y}; t = pct / 50.0f; }
+            lv_obj_set_pos(id(ci_waterline),
+                           tank_x + (lv_coord_t)lroundf(x0 + t * (x1 - x0)),
+                           tank_y + (lv_coord_t)lroundf(y0 + t * (y1 - y0)));
+          }
+          if (id(ci_m3_s).has_state()) {            // m³ → L, Swiss 1'000 grouping
+            int L = (int)lroundf(id(ci_m3_s).state * 1000.0f);
+            char b[32];
+            if (L >= 1000) snprintf(b, sizeof(b), "${txt_ci_liters_thousands_fmt}", L / 1000, L % 1000);
+            else           snprintf(b, sizeof(b), "${txt_ci_liters_fmt}", L);
+            lv_label_set_text(id(ci_liters), b);
+          }
+          if (id(ci_usage_s).has_state()) {         // m³ → L
+            char b[36];
+            snprintf(b, sizeof(b), "${txt_ci_usage_fmt}", id(ci_usage_s).state * 1000.0f);
+            lv_label_set_text(id(ci_usage), b);
+          }
+          if (id(ci_pump_s).has_state())
+            lv_label_set_text(id(ci_pump), id(ci_pump_s).state ? "${txt_ci_pump_on}" : "${txt_ci_pump_off}");
+          if (id(ci_rain_s).has_state()) {
+            char b[48];
+            snprintf(b, sizeof(b), "${txt_ci_rain_fmt}", id(ci_rain_s).state.c_str());
+            lv_label_set_text(id(ci_rain), b);
+          }
+
+  # ── §Energy 4b: advance per-line phase ∝ power/max and repaint the 68 LEDs ──
+  # Arrays generated by tools/gen_energy_leds.py (new_energy-layout.json).
+  # Comet color is clamped per line to its arc fill color (spec color_key):
+  #   PV lines 0xE07B00 · Netz-Bezug lines 0xA81D1D · Akku-Entladen 0x7A1A1A
+  #   WP 0xB08900 · EV 0x04B503. Called by a 100ms interval.
+  - id: chase_leds
+    then:
+      - lambda: |-
+          auto val = [](esphome::sensor::Sensor* s){ return s->has_state() ? s->state : 0.0f; };
+          lv_obj_t* led_pvbatt[10] = { id(led_pvbatt_0), id(led_pvbatt_1), id(led_pvbatt_2), id(led_pvbatt_3), id(led_pvbatt_4), id(led_pvbatt_5), id(led_pvbatt_6), id(led_pvbatt_7), id(led_pvbatt_8), id(led_pvbatt_9) };
+          lv_obj_t* led_gridhouse[10] = { id(led_gridhouse_0), id(led_gridhouse_1), id(led_gridhouse_2), id(led_gridhouse_3), id(led_gridhouse_4), id(led_gridhouse_5), id(led_gridhouse_6), id(led_gridhouse_7), id(led_gridhouse_8), id(led_gridhouse_9) };
+          lv_obj_t* led_pvgrid[10] = { id(led_pvgrid_0), id(led_pvgrid_1), id(led_pvgrid_2), id(led_pvgrid_3), id(led_pvgrid_4), id(led_pvgrid_5), id(led_pvgrid_6), id(led_pvgrid_7), id(led_pvgrid_8), id(led_pvgrid_9) };
+          lv_obj_t* led_pvhouse[10] = { id(led_pvhouse_0), id(led_pvhouse_1), id(led_pvhouse_2), id(led_pvhouse_3), id(led_pvhouse_4), id(led_pvhouse_5), id(led_pvhouse_6), id(led_pvhouse_7), id(led_pvhouse_8), id(led_pvhouse_9) };
+          lv_obj_t* led_battgrid[10] = { id(led_battgrid_0), id(led_battgrid_1), id(led_battgrid_2), id(led_battgrid_3), id(led_battgrid_4), id(led_battgrid_5), id(led_battgrid_6), id(led_battgrid_7), id(led_battgrid_8), id(led_battgrid_9) };
+          lv_obj_t* led_batthouse[10] = { id(led_batthouse_0), id(led_batthouse_1), id(led_batthouse_2), id(led_batthouse_3), id(led_batthouse_4), id(led_batthouse_5), id(led_batthouse_6), id(led_batthouse_7), id(led_batthouse_8), id(led_batthouse_9) };
+          lv_obj_t* led_hphouse[4] = { id(led_hphouse_0), id(led_hphouse_1), id(led_hphouse_2), id(led_hphouse_3) };
+          lv_obj_t* led_evhouse[4] = { id(led_evhouse_0), id(led_evhouse_1), id(led_evhouse_2), id(led_evhouse_3) };
+          auto run = [](lv_obj_t** leds, int n, int dir, float& ph, float p_kw, float maxkw, uint32_t comet){
+            float frac = p_kw/maxkw; if(frac<0)frac=0; if(frac>1)frac=1;
+            if(frac > 0.02f) ph += 2.0f * frac;          // base rate per 100 ms tick (2.0f=commet speed)
+            int head = (int)floorf(ph);
+            for(int k=0;k<n;k++){
+              int idx = dir>0 ? k : (n-1-k);
+              int d = ((head-idx)%n+n)%n;                 // d=1,2 trail BEHIND the head
+              uint32_t col = 0xBFB5A3; uint8_t opa = 255; // $ink_faint track
+              const int T = 5;                            // comet length (head + 4 trail)
+              if(frac > 0.02f && d < T){ col=comet; opa=(uint8_t)(255*(T-d)/T); }
+              lv_obj_set_style_bg_color(leds[k], lv_color_hex(col), 0);
+              lv_obj_set_style_bg_opa(leds[k], opa, 0);
+            }
+          };
+          run(led_pvbatt,    10,  1, id(ph_pvbatt),    val(id(en_line_pv_batt))/1000.0f,    8.9f, 0xE07B00);
+          run(led_pvgrid,    10,  1, id(ph_pvgrid),    val(id(en_line_pv_grid))/1000.0f,    8.9f, 0xE07B00);
+          run(led_pvhouse,   10,  1, id(ph_pvhouse),   val(id(en_line_pv_house))/1000.0f,   8.9f, 0xE07B00);
+          run(led_battgrid,  10, -1, id(ph_battgrid),  val(id(en_line_grid_batt))/1000.0f,  8.9f, 0xA81D1D);
+          run(led_batthouse, 10,  1, id(ph_batthouse), val(id(en_line_batt_house))/1000.0f, 8.9f, 0x7A1A1A);
+          run(led_gridhouse, 10,  1, id(ph_gridhouse), val(id(en_line_grid_house))/1000.0f, 12.0f, 0xA81D1D);
+          run(led_hphouse,    4, -1, id(ph_hphouse),   val(id(en_wp_power))/1000.0f,        4.0f, 0xB08900);
+          run(led_evhouse,    4, -1, id(ph_evhouse),   val(id(en_ev_power))/1000.0f,       11.0f, 0x04B503);
+
+  # ── §Strom heute (energy page lower half): daily energy table + grid cost ──
+  # Fills the 13 value cells in sections/energy_cost.yaml. kWh %.1f, CHF %.2f.
+  # Totals are net: Batterie geladen−entladen (+ = Akku gefüllt), Netz Bezug−Einspeisung
+  # (CHF + = bezahlt); |x| below rounding shows as 0. Cost only on the grid rows.
+  - id: render_energy_cost
+    mode: restart
+    then:
+      - lambda: |-
+          char b[16];
+          if (id(en_pv_daily_s).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_pv_daily_s).state);
+            lv_label_set_text(id(ec_pv_kwh), b);
+          }
+          if (id(en_batt_in_daily).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_batt_in_daily).state);
+            lv_label_set_text(id(ec_batt_in_kwh), b);
+          }
+          if (id(en_batt_out_daily).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_batt_out_daily).state);
+            lv_label_set_text(id(ec_batt_out_kwh), b);
+          }
+          if (id(en_batt_out_daily).has_state() && id(en_batt_in_daily).has_state()) {
+            float v = id(en_batt_in_daily).state - id(en_batt_out_daily).state;   // + = net geladen
+            if (fabsf(v) < 0.05f) v = 0.0f;                                        // never "-0.0"
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", v);
+            lv_label_set_text(id(ec_batt_total_kwh), b);
+          }
+          if (id(en_grid_in_daily).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_grid_in_daily).state);
+            lv_label_set_text(id(ec_grid_in_kwh), b);
+            if (id(en_price_import).has_state()) {
+              snprintf(b, sizeof(b), "${txt_chf_fmt}", id(en_grid_in_daily).state * id(en_price_import).state);
+              lv_label_set_text(id(ec_grid_in_chf), b);
+            }
+          }
+          if (id(en_grid_out_daily).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_grid_out_daily).state);
+            lv_label_set_text(id(ec_grid_out_kwh), b);
+            if (id(en_price_export).has_state()) {
+              snprintf(b, sizeof(b), "${txt_chf_fmt}", id(en_grid_out_daily).state * id(en_price_export).state);
+              lv_label_set_text(id(ec_grid_out_chf), b);
+            }
+          }
+          if (id(en_grid_in_daily).has_state() && id(en_grid_out_daily).has_state()) {
+            float e = id(en_grid_in_daily).state - id(en_grid_out_daily).state;   // + = net bezogen
+            if (fabsf(e) < 0.05f) e = 0.0f;                                        // never "-0.0"
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", e);
+            lv_label_set_text(id(ec_grid_total_kwh), b);
+            if (id(en_price_import).has_state() && id(en_price_export).has_state()) {
+              float c = id(en_grid_in_daily).state  * id(en_price_import).state
+                      - id(en_grid_out_daily).state * id(en_price_export).state;   // + = bezahlt
+              if (fabsf(c) < 0.005f) c = 0.0f;                                         // never "-0.00"
+              snprintf(b, sizeof(b), "${txt_chf_fmt}", c);
+              lv_label_set_text(id(ec_grid_total_chf), b);
+            }
+          }
+          if (id(en_house_daily_s).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_house_daily_s).state);
+            lv_label_set_text(id(ec_haus_kwh), b);
+          }
+          if (id(en_wp_daily_s).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_wp_daily_s).state);
+            lv_label_set_text(id(ec_heiz_kwh), b);
+          }
+          if (id(en_ev_daily_s).has_state()) {
+            snprintf(b, sizeof(b), "${txt_kwh_fmt}", id(en_ev_daily_s).state);
+            lv_label_set_text(id(ec_niro_kwh), b);
+          }

@@ -1,0 +1,86 @@
+# EV-Panel — §4 CLIMATE (108 px) — single "Vorklimatisieren" toggle.
+# Paper-tint band, paper-fill button, 3px ink border that flips to $ok_green
+# while active. Border colour is the only "I pressed it" feedback.
+#
+# Tapping ON sets the HA climate entity to hvac_mode "cool"; OFF sets "off".
+# (The car does the actual pre-conditioning; heat/cool are functionally
+# equivalent here, so we use cool.) A 15-min climate_border_timer (scripts_ui.yaml)
+# only resets the green border + local climate_active state — it does NOT send
+# "off", because the car stops pre-conditioning on its own after ~15 min.
+#
+# Required substitutions:
+#   ${ha_climate_entity}  — HA climate entity (e.g. climate.niro_climate_control)
+
+obj:
+  id: sec_climate
+  width: 100%
+  height: 108
+  bg_color: $paper_tint
+  bg_opa: COVER
+  border_width: 0
+  scrollable: false
+  pad_left: 14
+  pad_right: 14
+  pad_top: 9
+  pad_bottom: 9
+  layout:
+    type: FLEX
+    flex_flow: ROW
+    pad_column: 14
+  widgets:
+    # ── Vorklimatisieren (toggle) ──
+    - button:
+        id: precond_btn
+        flex_grow: 1
+        height: 90
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 3
+        radius: 8
+        shadow_width: 0
+        pad_all: 10
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+          pad_column: 14
+        widgets:
+          - image:
+              id: precool_icon
+              src: img_loading        # online_image img_precooling; swapped in by refresh_after_assets
+          - label:
+              flex_grow: 1
+              text: "$txt_climate_button"
+              text_font: font_status
+              text_color: $ink
+              text_align: CENTER
+          - image:
+              id: preheat_icon
+              src: img_loading        # online_image img_preheating; swapped in by refresh_after_assets
+        on_click:
+          - script.execute: beep_click
+          - if:
+              condition:
+                lambda: 'return !id(climate_active);'
+              then:                     # OFF → ON
+                - lambda: |-
+                    id(climate_active) = true;
+                    lv_obj_set_style_border_color(id(precond_btn), lv_color_hex($ok_green), 0);
+                - homeassistant.action:
+                    action: climate.set_hvac_mode
+                    data:
+                      entity_id: ${ha_climate_entity}
+                      hvac_mode: cool
+                - script.execute: climate_border_timer
+              else:                     # ON → OFF
+                - lambda: |-
+                    id(climate_active) = false;
+                    lv_obj_set_style_border_color(id(precond_btn), lv_color_hex($ink), 0);
+                - homeassistant.action:
+                    action: climate.set_hvac_mode
+                    data:
+                      entity_id: ${ha_climate_entity}
+                      hvac_mode: 'off'      # quote: bare off is YAML boolean false
+                - script.stop: climate_border_timer

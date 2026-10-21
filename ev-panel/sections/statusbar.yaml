@@ -1,0 +1,99 @@
+# EV-Panel — shared bottom status bar (lives in LVGL top_layer, bottom-aligned).
+# Renders identically on every page. Layout: connectivity dots (HA/evcc/Radar) left,
+# page-dots centered, italic Crimson clock right.
+#
+# IDs driven by scripts:
+#   sb_ha_dot   — api on_client_connected (ha_entities.yaml) → $ok_green
+#   sb_evcc_dot — refresh_evcc_dot
+#   sb_radar_dot— refresh_radar_dot (device YAML)
+#   sb_clock    — refresh_clock
+#   pagedot_0..3— refresh_page_dots (active page = wide $ink pill; future pages faint)
+obj:
+  id: sec_statusbar
+  width: 100%
+  height: 60
+  align: BOTTOM_MID
+  y: 0
+  bg_color: $paper_tint
+  bg_opa: COVER
+  border_width: 0
+  scrollable: false
+  pad_left: 18
+  pad_right: 18
+  pad_top: 10
+  pad_bottom: 10
+  layout:
+    type: FLEX
+    flex_flow: ROW
+    flex_align_cross: CENTER
+    pad_column: 14
+  widgets:
+    # ── left: connectivity dots ──
+    - obj:
+        width: SIZE_CONTENT
+        height: SIZE_CONTENT
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        layout: { type: FLEX, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 14 }
+        widgets:
+          - obj:
+              width: SIZE_CONTENT
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 6 }
+              widgets:
+                - obj: { id: sb_ha_dot, width: 12, height: 12, radius: 6, bg_color: $ink_faint, bg_opa: COVER, border_width: 0 }
+                - label: { text: "$txt_sb_ha", text_font: font_label, text_color: $ink_mute }
+          - obj:
+              width: SIZE_CONTENT
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 6 }
+              widgets:
+                - obj: { id: sb_evcc_dot, width: 12, height: 12, radius: 6, bg_color: $ink_faint, bg_opa: COVER, border_width: 0 }
+                - label: { text: "$txt_sb_evcc", text_font: font_label, text_color: $ink_mute }
+          - obj:
+              width: SIZE_CONTENT
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              layout: { type: FLEX, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 6 }
+              widgets:
+                - obj: { id: sb_radar_dot, width: 12, height: 12, radius: 6, bg_color: $ink_faint, bg_opa: COVER, border_width: 0 }
+                - label: { text: "$txt_sb_radar", text_font: font_label, text_color: $ink_mute }
+    # ── spacer (pushes clock to the right edge) ──
+    - obj: { flex_grow: 1, height: 1, bg_opa: TRANSP, border_width: 0 }
+    # ── local room temp (SHT41) — sits just left of the clock (driven by refresh_local_temp) ──
+    - label:
+        id: sb_temp
+        text: "—"
+        text_font: font_crimson_clock
+        text_color: $ink_mute
+    # ── right: clock ──
+    - label:
+        id: sb_clock
+        text: "—"
+        text_font: font_crimson_clock
+        text_color: $ink_soft
+    # ── page-dots: out of flex flow, true screen-center (ignore_layout) ──
+    - obj:
+        id: sb_pagedots
+        ignore_layout: true
+        align: CENTER
+        width: SIZE_CONTENT
+        height: SIZE_CONTENT
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        layout: { type: FLEX, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 8 }
+        widgets:
+          - obj: { id: pagedot_0, width: 18, height: 8, radius: 4, bg_color: $ink,      bg_opa: COVER, border_width: 0 }
+          - obj: { id: pagedot_1, width: 8,  height: 8, radius: 4, bg_color: $ink_mute, bg_opa: COVER, border_width: 0 }
+          - obj: { id: pagedot_2, width: 8,  height: 8, radius: 4, bg_color: $ink_mute, bg_opa: 60%,   border_width: 0 }
+          - obj: { id: pagedot_3, width: 8,  height: 8, radius: 4, bg_color: $ink_mute, bg_opa: 60%,   border_width: 0 }

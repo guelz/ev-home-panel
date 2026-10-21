@@ -1,0 +1,224 @@
+# =============================================================================
+# evcc Wallbox (Loadpoint 1 "Warp3 Charger Parkplatz") — MQTT-Bridge nach HA
+# =============================================================================
+# Warum es das braucht: evcc publiziert seinen State zwar auf MQTT
+# (your broker, topic root "evcc"), sendet aber KEINE Home-Assistant
+# MQTT-Discovery-Nachrichten. HA legt darum von selbst nichts an — die Entitäten
+# müssen von Hand deklariert werden, genau wie in packages/warp3_wallbox.yaml.
+#
+# Topic-Layout (am 2026-09-03 live vom Broker abgegriffen, evcc 0.314.5):
+#   evcc/status                        online | offline   (LWT → availability)
+#   evcc/loadpoints/1/mode             off | smart | now   (seit 0.316, s.u.)
+#   evcc/loadpoints/1/alwaysCharge     off | on | once     (seit 0.316)
+#   evcc/loadpoints/1/chargePower      W
+#   evcc/loadpoints/1/todayEnergy      Wh   (nicht kWh!)
+#   evcc/loadpoints/1/chargedEnergy    Wh   (laufende Session)
+#   evcc/loadpoints/1/charging         true | false
+#   evcc/loadpoints/1/connected        true | false
+#   evcc/loadpoints/1/enabled          true | false
+#   evcc/loadpoints/1/vehicleSoc       %    (aus der Kia-Cloud, via evcc)
+#   evcc/loadpoints/1/sessionSolarPercentage  %
+# Schreiben: evcc abonniert denselben Pfad mit angehängtem "/set", also
+#   evcc/loadpoints/1/mode/set          ← "now" / "smart" / "off"
+#   evcc/loadpoints/1/alwaysCharge/set  ← "off" / "on" / "once"
+#
+# Loadpoint 1 ist der Warp3 (title "Warp3 Charger Parkplatz", priority 3).
+# Loadpoint 2 = Stiebel Eltron WP, 3 = Boiler-Heizstab, 4 = Klima DG.
+#
+# evcc 0.316 "Mode Redesign" (PR evcc-io/evcc#32490, Breaking Change):
+#   pv → smart; minpv entfällt und wird zur separaten Option "Dauerhaft laden"
+#   (alwaysCharge) auf dem Smart-Modus. Gelesen wird nur noch off/smart/now.
+#   Schreibend nimmt evcc pv/minpv weiter an, aber "pv" schaltet Dauerhaft laden
+#   AUS — darum schickt die Bridge "smart", das lässt alwaysCharge unberührt.
+# Die Optionen entsprechen den deutschen evcc-UI-Labels:
+#   Lademodus:        Aus → off  ·  Smart → smart  ·  Schnell → now
+#   Dauerhaft laden:  Aus → off  ·  Ein → on  ·  bis Ladeende → once
+# Das EV-Panel vergleicht diese Strings über seine Substitutionen evcc_mode_* und
+# evcc_always_* (Geräte-YAML) — Optionen hier nur zusammen mit diesen ändern.
+#
+# Weitere Entitäten fürs EV-Panel: binary_sensor.evcc_online (Statusleiste),
+# sensor.evcc_ladeplan_ziel (Ladeplan-Knopf), sensor.evcc_solaranteil_ladepunkte
+# (Netz/PV-Aufteilung der Ladeleistung).
+#
+# retain: false ist Pflicht — eine retained Command-Nachricht würde nach jedem
+# Broker-Reconnect erneut zugestellt und den Modus ungefragt überschreiben.
+# (Gleiche Begründung wie in packages/warp3_wallbox.yaml.)
+#
+# NB: kein `device:`-Block, damit die entity_ids exakt aus dem Namen
+# slugifizieren (select.evcc_lademodus usw.) — sonst schiebt HA den Gerätenamen
+# als Präfix davor.
+# =============================================================================
+mqtt:
+  select:
+    - name: "evcc Lademodus"
+      unique_id: evcc_lp1_mode
+      icon: mdi:ev-station
+      state_topic: "evcc/loadpoints/1/mode"
+      # pv/minpv nur noch als Fallback, falls evcc je auf <0.316 zurückgerollt wird.
+      value_template: >-
+        {{ {'now': 'Schnell', 'off': 'Aus', 'smart': 'Smart', 'pv': 'Smart', 'minpv': 'Smart'}.get(value, 'Smart') }}
+      command_topic: "evcc/loadpoints/1/mode/set"
+      command_template: >-
+        {{ {'Schnell': 'now', 'Aus': 'off', 'Smart': 'smart'}[value] }}
+      options: ["Aus", "Smart", "Schnell"]
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      retain: false
+
+    # "Dauerhaft laden" (ehemals Min+PV): im Smart-Modus nie pausieren, mindestens
+    # mit Minimalstrom laden. "bis Ladeende" setzt evcc beim Abstecken selbst zurück.
+    - name: "evcc Dauerhaft laden"
+      unique_id: evcc_lp1_always_charge
+      icon: mdi:all-inclusive
+      state_topic: "evcc/loadpoints/1/alwaysCharge"
+      value_template: >-
+        {{ {'off': 'Aus', 'on': 'Ein', 'once': 'bis Ladeende'}.get(value, 'Aus') }}
+      command_topic: "evcc/loadpoints/1/alwaysCharge/set"
+      command_template: >-
+        {{ {'Aus': 'off', 'Ein': 'on', 'bis Ladeende': 'once'}[value] }}
+      options: ["Aus", "Ein", "bis Ladeende"]
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      retain: false
+
+  sensor:
+    # Ladeleistung am Loadpoint (W). Deckt sich mit sensor.warp3_2iw7_powernow —
+    # der Warp3 misst selbst, evcc reicht denselben Wert nur weiter.
+    - name: "evcc Ladeleistung"
+      unique_id: evcc_lp1_charge_power
+      state_topic: "evcc/loadpoints/1/chargePower"
+      unit_of_measurement: "W"
+      device_class: power
+      state_class: measurement
+      suggested_display_precision: 0
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # Heute geladen. evcc liefert Wh → /1000 für kWh.
+    - name: "evcc Heute geladen"
+      unique_id: evcc_lp1_today_energy
+      state_topic: "evcc/loadpoints/1/todayEnergy"
+      value_template: "{{ (value | float(0) / 1000) | round(3) }}"
+      unit_of_measurement: "kWh"
+      device_class: energy
+      state_class: total_increasing
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # Laufende Ladesession (Wh → kWh). Springt bei jedem Einstecken auf 0.
+    - name: "evcc Session geladen"
+      unique_id: evcc_lp1_session_energy
+      state_topic: "evcc/loadpoints/1/chargedEnergy"
+      value_template: "{{ (value | float(0) / 1000) | round(3) }}"
+      unit_of_measurement: "kWh"
+      device_class: energy
+      state_class: total_increasing
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # SOC, wie evcc ihn kennt (kommt aus der Kia-Cloud über evcc, nicht vom Auto
+    # direkt). Der Warp3 Smart kann kein ISO15118 — siehe project_warp3_native_pv.
+    - name: "evcc Fahrzeug SOC"
+      unique_id: evcc_lp1_vehicle_soc
+      state_topic: "evcc/loadpoints/1/vehicleSoc"
+      unit_of_measurement: "%"
+      device_class: battery
+      state_class: measurement
+      suggested_display_precision: 0
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # Ziel-SoC des wirksamen Ladeplans am Loadpoint (0 = kein Plan). Bewusst der
+    # Loadpoint-Wert und NICHT evcc/vehicles/<name>/plan/soc: evcc löscht beim
+    # Entfernen eines Plans nur den Eltern-Topic "plan", "plan/soc" bleibt retained
+    # stehen und würde nach jedem HA-Neustart einen gelöschten Plan als aktiv zeigen.
+    # Kehrseite: der Wert gilt erst, wenn evcc das Auto am Loadpoint erkannt hat.
+    # Gesetzt wird der Plan von script.evcc_ladeplan_bis_morgen (EV-Panel-Knopf).
+    - name: "evcc Ladeplan Ziel"
+      unique_id: evcc_lp1_effective_plan_soc
+      icon: mdi:calendar-clock
+      state_topic: "evcc/loadpoints/1/effectivePlanSoc"
+      unit_of_measurement: "%"
+      suggested_display_precision: 0
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # Momentaner Solaranteil der Ladepunkte (evcc greenShareLoadpoints, 0–1 → %).
+    # evcc-Rechnung, kein Zähler: das Haus wird zuerst versorgt, Batterie-Entladung
+    # zählt als grün, der Anteil gilt für alle Ladepunkte gemeinsam (auch WP).
+    # EV-Panel: Ladeleistung × Anteil = "kW PV", Rest = "kW Netz".
+    - name: "evcc Solaranteil Ladepunkte"
+      unique_id: evcc_site_green_share_loadpoints
+      icon: mdi:solar-power-variant
+      state_topic: "evcc/site/greenShareLoadpoints"
+      value_template: "{{ (value | float(0) * 100) | round(1) }}"
+      unit_of_measurement: "%"
+      state_class: measurement
+      suggested_display_precision: 0
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # Solaranteil der laufenden Session (%).
+    - name: "evcc Solaranteil"
+      unique_id: evcc_lp1_solar_pct
+      icon: mdi:solar-power
+      state_topic: "evcc/loadpoints/1/sessionSolarPercentage"
+      unit_of_measurement: "%"
+      state_class: measurement
+      suggested_display_precision: 0
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+  binary_sensor:
+    # evcc erreichbar (LWT evcc/status). Bewusst OHNE availability_topic — es IST
+    # das Availability-Signal; mit wäre der Sensor "unavailable" statt "off".
+    # Treibt den "evcc"-Punkt in der EV-Panel-Statusleiste.
+    - name: "evcc Online"
+      unique_id: evcc_online
+      device_class: connectivity
+      state_topic: "evcc/status"
+      payload_on: "online"
+      payload_off: "offline"
+
+    # Lädt gerade wirklich Strom.
+    - name: "evcc Laedt"
+      unique_id: evcc_lp1_charging
+      device_class: battery_charging
+      state_topic: "evcc/loadpoints/1/charging"
+      payload_on: "true"
+      payload_off: "false"
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # Kabel eingesteckt / Fahrzeug erkannt.
+    - name: "evcc Kabel verbunden"
+      unique_id: evcc_lp1_connected
+      device_class: plug
+      state_topic: "evcc/loadpoints/1/connected"
+      payload_on: "true"
+      payload_off: "false"
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+
+    # evcc hat den Ladepunkt freigegeben (Freigabesignal an den Warp3).
+    # NICHT dasselbe wie "laedt": freigegeben + 0 W = wartet auf Überschuss.
+    - name: "evcc Freigabe"
+      unique_id: evcc_lp1_enabled
+      icon: mdi:check-decagram-outline
+      state_topic: "evcc/loadpoints/1/enabled"
+      payload_on: "true"
+      payload_off: "false"
+      availability_topic: "evcc/status"
+      payload_available: "online"
+      payload_not_available: "offline"

@@ -1,0 +1,113 @@
+# EV-Panel — §3 VEHICLE (444 px)
+# Battery + Range row, with a faint car silhouette watermark peeking in from
+# bottom-right. Top divider rule mirrors the ribbon's bottom rule for visual rhythm.
+# `render_vehicle` script repaints SOC / range / battery icon from globals.
+#
+# Required substitutions:
+#   ${vehicle_section_title}    — small-caps section label (e.g. "NIRO EV", "MODEL 3")
+
+obj:
+  id: sec_vehicle
+  width: 100%
+  height: 444
+  flex_grow: 1        # auto-fills the column
+  bg_opa: TRANSP
+  border_width: 0
+  scrollable: false
+  pad_all: 0
+  widgets:
+    # Top hairline divider
+    - obj:
+        align: TOP_MID
+        width: 100%
+        height: 2
+        bg_color: $ink
+        bg_opa: COVER
+        border_width: 0
+
+    # Watermark — vehicle silhouette peeks from bottom-right corner, behind everything
+    - image:
+        id: vehicle_watermark
+        src: img_loading        # online_image img_vehicle_bg; swapped in by refresh_after_assets
+        align: BOTTOM_RIGHT
+        x: 140
+        y: 50
+
+    # Section label — small caps top-left
+    - label:
+        text: "${vehicle_section_title}"
+        align: TOP_LEFT
+        x: 28
+        y: 18
+        text_font: font_section_title
+        text_color: $ink_mute
+        text_letter_space: 4
+
+    # Battery row: icon + huge SOC + % (centered as a unit)
+    - obj:
+        align: TOP_MID
+        y: 70
+        width: SIZE_CONTENT
+        height: SIZE_CONTENT
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_cross: CENTER
+          pad_column: 40
+        widgets:
+          - image:
+              id: bat_icon
+              src: img_loading        # online_image battery icon; swapped in by render_vehicle once loaded
+          # SOC group — number + unit, baseline-aligned at bottom
+          - obj:
+              width: SIZE_CONTENT
+              height: SIZE_CONTENT
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              layout:
+                type: FLEX
+                flex_flow: ROW
+                flex_align_cross: END
+                pad_column: 4
+              widgets:
+                - label:
+                    id: bat_pct
+                    text: "78"
+                    text_font: font_crimson_pct
+                    text_color: $ink
+                - label:
+                    text: "%"
+                    text_font: font_crimson_pct_unit
+                    text_color: $ink_soft
+
+    # Range row: icon + huge "234" + "km Reichweite" (centered as a unit)
+    - obj:
+        align: TOP_MID
+        y: 280
+        width: SIZE_CONTENT
+        height: SIZE_CONTENT
+        bg_opa: TRANSP
+        border_width: 0
+        pad_all: 0
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_cross: END
+          pad_column: 18
+        widgets:
+          - image:
+              id: range_icon
+              src: img_loading        # online_image img_range; swapped in by refresh_after_assets
+          - label:
+              id: range_num
+              text: "234"
+              text_font: font_crimson_range
+              text_color: $ink
+          - label:
+              text: "$txt_veh_range_unit"
+              text_font: font_crimson_meta
+              text_color: $ink_soft

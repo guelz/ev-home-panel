@@ -1,0 +1,265 @@
+# EV-Panel — UI scripts (clock, page nav, backlight wake/dim, climate timers,
+# asset loading).
+#
+# Required substitutions:
+#   ${dim_timeout_s}             — seconds with no presence before backlight dims
+#   ${ha_climate_entity}         — HA climate entity_id (climate.set_hvac_mode)
+
+script:
+
+  # ─── Statusbar evcc dot — green while evcc is online (MQTT LWT via HA) ────
+  - id: refresh_evcc_dot
+    then:
+      - lambda: |-
+          bool ok = id(evcc_online_s).has_state() && id(evcc_online_s).state;
+          lv_obj_set_style_bg_color(id(sb_evcc_dot),
+            lv_color_hex(ok ? $ok_green : $ink_faint), 0);
+
+  # ─── Statusbar clock (italic Crimson, "Mo 14:32") ─────────────────────────
+  - id: refresh_clock
+    then:
+      - lambda: |-
+          auto t = id(homeassistant_time).now();
+          if (!t.is_valid()) {
+            lv_label_set_text(id(sb_clock), "—");
+            return;
+          }
+          static const char* dnames[7] = {"${txt_day_0}", "${txt_day_1}", "${txt_day_2}", "${txt_day_3}", "${txt_day_4}", "${txt_day_5}", "${txt_day_6}"};
+          char buf[32];
+          snprintf(buf, sizeof(buf), "%s %02d:%02d", dnames[t.day_of_week - 1], t.hour, t.minute);
+          lv_label_set_text(id(sb_clock), buf);
+
+  # ─── Backlight wake / dim (day/night aware) ───────────────────────────────
+  # This panel's backlight is effectively OFF below ~30%, so all levels stay at
+  # or above that (or go fully off on purpose). Two levels per state, by sun:
+  #   • WAKE  (presence/touch) → day uses `max_brightness` (def 50%), night uses
+  #                              `night_max_brightness` (def 30%) — both HA
+  #                              sliders, controls.yaml.
+  #   • IDLE  (no presence for ${dim_timeout_s}s) → 30% by day, fully off at night.
+  # "Night" = sun.sun below_horizon, read via the `sun_state` text_sensor
+  # (ha_entities.yaml). The level is re-evaluated on every wake/dim event, so an
+  # idle unattended panel only shifts on the next presence tick (with the LD2412
+  # that's effectively immediate whenever someone is nearby).
+  - id: wake_display
+    mode: restart
+    then:
+      - light.turn_on:
+          id: backlight
+          brightness: !lambda |-
+            // Night (sun below horizon) wakes to the night slider; day to the day
+            // slider. Empty sun_state (pre-HA-sync) falls through to day = safe.
+            bool night = (id(sun_state).state == "below_horizon");
+            float pct = night ? id(night_max_brightness).state : id(max_brightness).state;
+            return pct / 100.0f;
+      - script.execute: dim_after_timeout
+
+  - id: dim_after_timeout
+    mode: restart
+    then:
+      - delay: ${dim_timeout_s}s
+      # Day → dim to 30% (lowest still-visible level). Night → fully off.
+      - if:
+          condition:
+            lambda: 'return id(sun_state).state == "below_horizon";'
+          then:
+            - light.turn_off: backlight
+          else:
+            - light.turn_on:
+                id: backlight
+                brightness: 30%
+
+  # ─── Climate border timer (15 min) — resets the green border + local state. ──
+  # The car runs its own 15-min climate timer and shuts off by itself, so we do
+  # NOT send turn_off here. mode: restart → re-taps push the deadline out.
+  - id: climate_border_timer
+    mode: restart
+    then:
+      - delay: 15min
+      - lambda: |-
+          id(climate_active) = false;
+          lv_obj_set_style_border_color(id(precond_btn), lv_color_hex($ink), 0);
+
+  # ── Multi-page: paint the page-dots for the current page ──
+  - id: refresh_page_dots
+    then:
+      - lambda: |-
+          lv_obj_t* dots[4] = { id(pagedot_0), id(pagedot_1), id(pagedot_2), id(pagedot_3) };
+          for (int i = 0; i < 4; i++) {
+            bool active = (i == id(current_page));
+            bool used   = (i < id(page_count));
+            lv_obj_set_width(dots[i], active ? 18 : 8);
+            lv_obj_set_style_bg_color(dots[i], lv_color_hex(active ? $ink : $ink_mute), 0);
+            lv_obj_set_style_bg_opa(dots[i], used ? LV_OPA_COVER : LV_OPA_60, 0);
+          }
+
+  # ── Multi-page: switch to page <idx> with a directional slide ──
+  # Statusbar lives in the LVGL top_layer, so it persists across screen loads.
+  # Extend pages[] + bump page_count as pages are added in later phases.
+  - id: show_page
+    parameters:
+      idx: int
+    then:
+      - lambda: |-
+          int n = id(page_count);
+          int i = idx; if (i < 0) i = 0; if (i > n - 1) i = n - 1;
+          int old = id(current_page);
+          if (i == old) return;
+          id(current_page) = i;
+          lv_obj_t* pages[4] = { id(main_page)->obj, id(energy_page)->obj, id(cistern_page)->obj, nullptr };
+          if (pages[i]) {
+            lv_scr_load_anim_t anim = (i > old) ? LV_SCR_LOAD_ANIM_MOVE_LEFT
+                                                : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+            lv_scr_load_anim(pages[i], anim, 200, 0, false);
+          }
+      - script.execute: refresh_page_dots
+      - script.execute: wake_display
+
+  # ── Phase 2: pull online_image assets, retry-friendly ──
+  # Driven by a delayed+retrying interval (http_polling.yaml), NOT on_connect:
+  # the switch holds the port in STP for ~30 s after link-up, so early connects
+  # fail (ESP_ERR_HTTP_CONNECT). Each pass updates only images not already loaded
+  # (update() is a no-op-ish skip when is_loaded()), staggered to be gentle. The
+  # interval keeps calling until refresh_after_assets sets assets_loaded.
+  - id: load_assets
+    mode: single
+    then:
+      - lambda: 'if (!id(img_vehicle_bg)->is_loaded())      id(img_vehicle_bg)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wallbox_bg)->is_loaded())      id(img_wallbox_bg)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_unplugged)->is_loaded())        id(img_unplugged)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_waiting)->is_loaded())          id(img_waiting)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_plugged_in)->is_loaded())       id(img_plugged_in)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_surplus_charging)->is_loaded()) id(img_surplus_charging)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_idle)->is_loaded())             id(img_idle)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_battery_25)->is_loaded())  id(img_battery_25)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_battery_50)->is_loaded())  id(img_battery_50)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_battery_75)->is_loaded())  id(img_battery_75)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_battery_100)->is_loaded()) id(img_battery_100)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_range)->is_loaded())      id(img_range)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_precooling)->is_loaded()) id(img_precooling)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_preheating)->is_loaded()) id(img_preheating)->update();'
+      # ── Phase 4a: energy-page node icons ──
+      - delay: 500ms
+      - lambda: 'if (!id(img_node_pv)->is_loaded())    id(img_node_pv)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_node_grid)->is_loaded())  id(img_node_grid)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_node_house)->is_loaded()) id(img_node_house)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_node_hp)->is_loaded())    id(img_node_hp)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_node_ev)->is_loaded())    id(img_node_ev)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_pv_battery_empty)->is_loaded()) id(img_pv_battery_empty)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_pv_battery_25)->is_loaded())  id(img_pv_battery_25)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_pv_battery_50)->is_loaded())  id(img_pv_battery_50)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_pv_battery_75)->is_loaded())  id(img_pv_battery_75)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_pv_battery_100)->is_loaded()) id(img_pv_battery_100)->update();'
+      # ── Page 3: cistern tank + waterline ──
+      - delay: 500ms
+      - lambda: 'if (!id(img_cistern_bg)->is_loaded())        id(img_cistern_bg)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_cistern_waterline)->is_loaded()) id(img_cistern_waterline)->update();'
+      # ── Page 3: 15 weather forecast icons ──
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_clear_night)->is_loaded())     id(img_wx_clear_night)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_cloudy)->is_loaded())          id(img_wx_cloudy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_exceptional)->is_loaded())     id(img_wx_exceptional)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_fog)->is_loaded())             id(img_wx_fog)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_hail)->is_loaded())            id(img_wx_hail)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_lightning)->is_loaded())       id(img_wx_lightning)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_lightning_rainy)->is_loaded()) id(img_wx_lightning_rainy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_partlycloudy)->is_loaded())    id(img_wx_partlycloudy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_pouring)->is_loaded())         id(img_wx_pouring)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_rainy)->is_loaded())           id(img_wx_rainy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_snowy)->is_loaded())           id(img_wx_snowy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_snowy_rainy)->is_loaded())     id(img_wx_snowy_rainy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_sunny)->is_loaded())           id(img_wx_sunny)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_windy)->is_loaded())           id(img_wx_windy)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_wx_windy_variant)->is_loaded())   id(img_wx_windy_variant)->update();'
+      # ── Lock button icons (not in the assets_loaded aggregate, so a missing
+      #    lock PNG can't hang the loading spinner) ──
+      - delay: 500ms
+      - lambda: 'if (!id(img_lock_closed)->is_loaded()) id(img_lock_closed)->update();'
+      - delay: 500ms
+      - lambda: 'if (!id(img_lock_open)->is_loaded())   id(img_lock_open)->update();'
+
+  # ── Phase 2: repaint LVGL once assets arrive (debounced via mode: restart) ──
+  # online_image's lv_img_dsc only refreshes when get_lv_image_dsc() is re-called,
+  # so we MUST re-set src per widget (a bare redraw keeps the stale empty dsc).
+  # Static widgets are re-set here; dynamic icons (wb_icon, bat_icon) via render_*.
+  - id: refresh_after_assets
+    mode: restart
+    then:
+      - delay: 150ms              # coalesce the burst of download-finished callbacks
+      - lambda: |-
+          // Only move a widget onto its online_image once that image's buffer is
+          // downloaded; an unloaded online_image draws null and hard-faults.
+          if (id(img_wallbox_bg)->is_loaded()) lv_img_set_src(id(wb_watermark),      id(img_wallbox_bg)->get_lv_image_dsc());
+          if (id(img_vehicle_bg)->is_loaded()) lv_img_set_src(id(vehicle_watermark), id(img_vehicle_bg)->get_lv_image_dsc());
+          if (id(img_range)->is_loaded())      lv_img_set_src(id(range_icon),        id(img_range)->get_lv_image_dsc());
+          if (id(img_precooling)->is_loaded()) lv_img_set_src(id(precool_icon),      id(img_precooling)->get_lv_image_dsc());
+          if (id(img_preheating)->is_loaded()) lv_img_set_src(id(preheat_icon),      id(img_preheating)->get_lv_image_dsc());
+          if (id(img_cistern_bg)->is_loaded())        lv_img_set_src(id(ci_tank),      id(img_cistern_bg)->get_lv_image_dsc());
+          if (id(img_cistern_waterline)->is_loaded()) lv_img_set_src(id(ci_waterline), id(img_cistern_waterline)->get_lv_image_dsc());
+          // All 13 in? Then the retry interval can stop calling load_assets.
+          id(assets_loaded) =
+            id(img_vehicle_bg)->is_loaded() && id(img_wallbox_bg)->is_loaded() &&
+            id(img_unplugged)->is_loaded() && id(img_waiting)->is_loaded() &&
+            id(img_plugged_in)->is_loaded() && id(img_surplus_charging)->is_loaded() &&
+            id(img_idle)->is_loaded() &&
+            id(img_battery_25)->is_loaded() && id(img_battery_50)->is_loaded() &&
+            id(img_battery_75)->is_loaded() && id(img_battery_100)->is_loaded() &&
+            id(img_range)->is_loaded() && id(img_precooling)->is_loaded() &&
+            id(img_preheating)->is_loaded() &&
+            id(img_node_pv)->is_loaded() && id(img_node_grid)->is_loaded() &&
+            id(img_node_house)->is_loaded() && id(img_node_hp)->is_loaded() &&
+            id(img_node_ev)->is_loaded() &&
+            id(img_pv_battery_empty)->is_loaded() && id(img_pv_battery_25)->is_loaded() &&
+            id(img_pv_battery_50)->is_loaded() && id(img_pv_battery_75)->is_loaded() &&
+            id(img_pv_battery_100)->is_loaded() &&
+            id(img_cistern_bg)->is_loaded() && id(img_cistern_waterline)->is_loaded() &&
+            id(img_wx_clear_night)->is_loaded() && id(img_wx_cloudy)->is_loaded() &&
+            id(img_wx_exceptional)->is_loaded() && id(img_wx_fog)->is_loaded() &&
+            id(img_wx_hail)->is_loaded() && id(img_wx_lightning)->is_loaded() &&
+            id(img_wx_lightning_rainy)->is_loaded() && id(img_wx_partlycloudy)->is_loaded() &&
+            id(img_wx_pouring)->is_loaded() && id(img_wx_rainy)->is_loaded() &&
+            id(img_wx_snowy)->is_loaded() && id(img_wx_snowy_rainy)->is_loaded() &&
+            id(img_wx_sunny)->is_loaded() && id(img_wx_windy)->is_loaded() &&
+            id(img_wx_windy_variant)->is_loaded();
+      - script.execute: render_wallbox
+      - script.execute: render_vehicle
+      - script.execute: render_energy
+      - script.execute: render_cistern
+      - script.execute: refresh_weather
+      - script.execute: render_lock      # repaint lock button once its icons arrive

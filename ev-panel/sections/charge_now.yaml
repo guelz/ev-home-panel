@@ -1,0 +1,70 @@
+# EV-Panel — top strip: "Schnellladen" + "Bis morgen früh voll laden", two
+# equal buttons. Schnellladen toggles the evcc charge mode now ↔ smart
+# (tap_charge_now); the plan button sets/cancels the evcc charge plan
+# (tap_plan) — both in scripts_charge_now.yaml. Border = $ok_green while active.
+obj:
+  id: sec_charge_now
+  width: 100%
+  height: 96
+  bg_color: $paper_tint
+  bg_opa: COVER
+  border_width: 0
+  scrollable: false
+  pad_left: 14
+  pad_right: 14
+  pad_top: 10
+  pad_bottom: 6
+  layout:
+    type: FLEX
+    flex_flow: ROW
+    flex_align_cross: CENTER
+    pad_column: 12
+  widgets:
+    - button:
+        id: charge_now_btn
+        flex_grow: 1
+        height: 80
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 3
+        radius: 8
+        shadow_width: 0
+        pad_all: 10
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+        widgets:
+          - label:
+              text: "$txt_charge_now_button"
+              text_font: font_status
+              text_color: $ink
+        on_click:
+          - script.execute: tap_charge_now
+
+    - button:
+        id: plan_btn
+        flex_grow: 1
+        height: 80
+        bg_color: $paper
+        bg_opa: COVER
+        border_color: $ink
+        border_width: 3
+        radius: 8
+        shadow_width: 0
+        pad_all: 4
+        layout:
+          type: FLEX
+          flex_flow: ROW
+          flex_align_main: CENTER
+          flex_align_cross: CENTER
+        widgets:
+          - label:
+              text: "$txt_plan_button"
+              text_font: font_button_2line
+              text_color: $ink
+              text_align: CENTER
+        on_click:
+          - script.execute: tap_plan

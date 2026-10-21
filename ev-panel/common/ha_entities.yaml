@@ -1,0 +1,203 @@
+# EV-Panel — Home Assistant integration
+# Two roles:
+#   1. Subscribe to the km-range sensor and trigger a vehicle re-render on update.
+#   2. Track HA API connection state and colour the §5 statusbar HA-dot accordingly.
+#
+# Required substitutions: every entity_id below is a ha_* substitution from the
+# "HA entities" block at the top of the device YAML (see README → HA entities).
+#
+# Note: the device YAML's `api:` block (which carries encryption.key + services)
+# merges with the on_client_* triggers below. Both contribute different sub-keys
+# of `api:`, so there's no collision.
+
+api:
+  # Single-client assumption: HA is the only client that talks to this panel.
+  # If multiple clients connect simultaneously, the dot may briefly flip to faint
+  # when one drops while HA is still present — fix later by querying
+  # api::global_api_server->is_connected() from a refresh script if it matters.
+  on_client_connected:
+    - lambda: |-
+        lv_obj_set_style_bg_color(id(sb_ha_dot), lv_color_hex($ok_green), 0);
+  on_client_disconnected:
+    - lambda: |-
+        lv_obj_set_style_bg_color(id(sb_ha_dot), lv_color_hex($ink_faint), 0);
+
+sensor:
+  # Ladeplan-Ziel (evcc effectivePlanSoc via HA bridge): > 0 = Plan aktiv →
+  # "Bis morgen früh voll laden" grün. Echtes Update beendet den optimistischen Zustand.
+  - platform: homeassistant
+    id: plan_soc_s
+    entity_id: ${ha_plan_soc}
+    on_value:
+      then:
+        - lambda: 'id(plan_optimistic) = false;'
+        - script.execute: render_plan_btn
+
+  - platform: homeassistant
+    id: ha_range
+    entity_id: ${ha_range_sensor}
+    on_value:
+      - logger.log:
+          format: "[ha_range] %.0f km"
+          args: ['x']
+      - script.execute: render_vehicle
+
+  # EV traction-battery SOC (Kia UVO). Sole source since the HA-as-hub migration —
+  # the AC charger never reported SOC on this car anyway (manual db: vehicle).
+  - platform: homeassistant
+    id: ha_soc
+    entity_id: ${ha_soc_sensor}
+    on_value:
+      - logger.log:
+          format: "[ha_soc] %.0f %%"
+          args: ['x']
+      - script.execute: render_vehicle
+      - script.execute: render_wallbox   # SOC drives the unplugged idle/warn split
+
+  # EV idle SOC threshold (HA input_number, default 40). When unplugged and SOC is
+  # at/above this, the wallbox shows idle.png instead of the red "nicht eingesteckt".
+  - platform: homeassistant
+    id: ev_idle_threshold
+    entity_id: ${ha_wb_idle_soc_threshold}
+    on_value:
+      - script.execute: render_wallbox
+
+  # EV blink SOC threshold (HA input_number, default 20): unplugged below this
+  # → wallbox icon blinks.
+  - platform: homeassistant
+    id: ev_blink_threshold
+    entity_id: ${ha_wb_blink_soc_threshold}
+    on_value:
+      - script.execute: render_wallbox
+
+  # ── §Energy page (page 2): arc power (W; EV in kW), daily energy (kWh), SOC ──
+  - { platform: homeassistant, id: en_pv_power,       entity_id: $ha_en_pv_power,                 on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_grid_export,    entity_id: $ha_en_grid_export_power,              on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_grid_import,    entity_id: $ha_en_grid_import_power,              on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_batt_charge,    entity_id: $ha_en_batt_charge_power,           on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_batt_discharge, entity_id: $ha_en_batt_discharge_power,        on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_house_power,    entity_id: $ha_en_house_power,              on_value: { then: [ script.execute: render_energy ] } }
+  # WP (Wärmepumpe + Boiler) — Shelly Pro 3EM, Kanal 0, Leistung in W.
+  # 2026-09-03: sensor.wp_und_boiler_total_active_power gibt es nicht mehr (die
+  # Shelly-Entitäten heissen jetzt heizungsraum_*_energy_meter_N_*). Der Shelly
+  # ist danach so umkonfiguriert, dass die WP auf KANAL 0 allein hängt —
+  # also bewusst einphasig messen, NICHT die drei Kanäle summieren.
+  - { platform: homeassistant, id: en_wp_power,       entity_id: $ha_en_wp_power, on_value: { then: [ script.execute: render_energy ] } }
+  # EV charging power — the Warp3's OWN power meter (W). Replaced
+  # sensor.niro_ev_charging_power (Kia cloud, kW) on 2026-09-03: the wallbox now
+  # has a meter, so this is local, second-resolution and survives a cloud outage.
+  # NB: unit is W like the dash_* sensors — every consumer divides by 1000.
+  - { platform: homeassistant, id: en_ev_power,       entity_id: $ha_wb_power,                 on_value: { then: [ script.execute: render_energy, script.execute: render_wallbox ] } }
+  # evcc solar share of the loadpoints (%) — splits the charging badge into Netz/PV.
+  - { platform: homeassistant, id: wb_green_share_s,  entity_id: $ha_wb_green_share,            on_value: { then: [ script.execute: render_wallbox ] } }
+  - { platform: homeassistant, id: en_pv_daily_s,     entity_id: $ha_en_pv_daily,          on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_house_daily_s,  entity_id: $ha_en_house_daily, on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_grid_in_daily,  entity_id: $ha_en_grid_in_daily,       on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_grid_out_daily, entity_id: $ha_en_grid_out_daily,       on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_batt_in_daily,  entity_id: $ha_en_batt_in_daily,    on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_batt_out_daily, entity_id: $ha_en_batt_out_daily, on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_wp_daily_s,     entity_id: $ha_en_wp_daily,          on_value: { then: [ script.execute: render_energy ] } }
+  # EV heute geladen — jetzt aus evcc (= Warp3-Zähler, todayEnergy Wh→kWh).
+  # Vorher sensor.ev_charged_daily: ein Template, das die Kia-Cloud-Leistung im
+  # 30-s-Takt aufintegriert hat. Am 2026-09-03 im Vergleich: Template 2.34 kWh vs.
+  # evcc 4.62 kWh — die Cloud-Integration unterschätzt deutlich (grobe, langsame
+  # Werte) und fällt bei jedem HA-Neustart auf 0 zurück. Der Zähler gewinnt.
+  - { platform: homeassistant, id: en_ev_daily_s,     entity_id: $ha_en_ev_daily,                  on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_batt_soc,       entity_id: $ha_en_batt_soc,         on_value: { then: [ script.execute: render_energy ] } }
+  - { platform: homeassistant, id: en_price_import,   entity_id: $ha_en_price_import,                   on_value: { then: [ script.execute: render_energy_cost ] } }
+  - { platform: homeassistant, id: en_price_export,   entity_id: $ha_en_price_export,                   on_value: { then: [ script.execute: render_energy_cost ] } }
+
+  # ── §Energy 4b: per-line power for LED chase (W → /1000; read by the 100ms interval) ──
+  - { platform: homeassistant, id: en_line_pv_batt,    entity_id: $ha_en_line_pv_batt }
+  - { platform: homeassistant, id: en_line_pv_grid,    entity_id: $ha_en_line_pv_grid }
+  - { platform: homeassistant, id: en_line_pv_house,   entity_id: $ha_en_line_pv_house }
+  - { platform: homeassistant, id: en_line_grid_batt,  entity_id: $ha_en_line_grid_batt }
+  - { platform: homeassistant, id: en_line_batt_house, entity_id: $ha_en_line_batt_house }
+  - { platform: homeassistant, id: en_line_grid_house, entity_id: $ha_en_line_grid_house }
+
+  # ── §Weather (page 3): 5-day forecast highs/lows (templates/ev_panel_weather.yaml) ──
+  - { platform: homeassistant, id: we_high_0, entity_id: $ha_we_d0_high, on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_low_0,  entity_id: $ha_we_d0_low,  on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_high_1, entity_id: $ha_we_d1_high, on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_low_1,  entity_id: $ha_we_d1_low,  on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_high_2, entity_id: $ha_we_d2_high, on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_low_2,  entity_id: $ha_we_d2_low,  on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_high_3, entity_id: $ha_we_d3_high, on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_low_3,  entity_id: $ha_we_d3_low,  on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_high_4, entity_id: $ha_we_d4_high, on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_low_4,  entity_id: $ha_we_d4_low,  on_value: { then: [ script.execute: refresh_weather ] } }
+
+  # ── §Cistern (page 3): fill %, volume m³, daily usage m³ ──
+  - { platform: homeassistant, id: ci_fill_s,  entity_id: $ha_ci_fill,        on_value: { then: [ script.execute: render_cistern ] } }
+  - { platform: homeassistant, id: ci_m3_s,    entity_id: $ha_ci_m3,          on_value: { then: [ script.execute: render_cistern ] } }
+  - { platform: homeassistant, id: ci_usage_s, entity_id: $ha_ci_usage, on_value: { then: [ script.execute: render_cistern ] } }
+
+# ── §Weather + §Cistern string states ──
+text_sensor:
+  # Sun above/below horizon — selects day vs night max brightness in wake_display
+  # (scripts_ui.yaml). State is "above_horizon" / "below_horizon".
+  - platform: homeassistant
+    id: sun_state
+    entity_id: ${ha_sun}
+
+  - { platform: homeassistant, id: we_cond_0, entity_id: $ha_we_d0_cond,    on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_cond_1, entity_id: $ha_we_d1_cond,    on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_cond_2, entity_id: $ha_we_d2_cond,    on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_cond_3, entity_id: $ha_we_d3_cond,    on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: we_cond_4, entity_id: $ha_we_d4_cond,    on_value: { then: [ script.execute: refresh_weather ] } }
+  - { platform: homeassistant, id: ci_rain_s, entity_id: $ha_ci_rain_text, on_value: { then: [ script.execute: render_cistern ] } }
+
+  # Lademodus — seit 2026-09-03 von evcc, nicht mehr vom Warp3-eigenen
+  # power_manager. evcc steuert alle Ladepunkte wieder selbst; select.evcc_lademodus
+  # (packages/evcc_wallbox.yaml) bildet evcc/loadpoints/1/mode auf die deutschen
+  # evcc-UI-Labels ab (seit evcc 0.316 nur noch drei Modi, Min+PV ist jetzt die
+  # separate Option "Dauerhaft laden" = select.evcc_dauerhaft_laden).
+  #   Schnell → now · Aus → off · Smart → smart
+  # Der alte select.warp3_lademodus existiert noch, ist aber nicht mehr die
+  # massgebende Quelle — evcc setzt den Ladestrom direkt am Warp3.
+  - platform: homeassistant
+    id: wb_mode_s
+    entity_id: ${ha_wb_mode_select}
+    on_value:
+      then:
+        - lambda: 'id(wb_schnell_optimistic) = false;'  # echtes Update angekommen
+        - script.execute: render_wallbox
+        - script.execute: render_charge_now
+
+  # evcc "Dauerhaft laden" (Aus/Ein/bis Ladeende) — the settings popup's two options.
+  - platform: homeassistant
+    id: always_s
+    entity_id: ${ha_wb_always_charge_select}
+    on_value:
+      then: [ script.execute: render_settings ]
+
+# ── §Cistern: pump running ──
+binary_sensor:
+  - platform: homeassistant
+    id: ci_pump_s
+    entity_id: ${ha_ci_pump}
+    on_state:
+      then:
+        - script.execute: render_cistern
+
+  # ── §2 Wallbox (Warp3 via HA/MQTT) — cable, charging, error; + statusbar evcc online ──
+  - platform: homeassistant
+    id: wb_cable_s
+    entity_id: ${ha_wb_cable}
+    on_state:
+      then: [ script.execute: render_wallbox ]
+  - platform: homeassistant
+    id: wb_charging_s
+    entity_id: ${ha_wb_charging}
+    on_state:
+      then: [ script.execute: render_wallbox ]
+  - platform: homeassistant
+    id: evcc_online_s
+    entity_id: ${ha_statusbar_evcc_online}
+    on_state:
+      then: [ script.execute: refresh_evcc_dot ]
+  - platform: homeassistant
+    id: wb_error_s
+    entity_id: ${ha_wb_error}
+    on_state:
+      then: [ script.execute: render_wallbox ]
