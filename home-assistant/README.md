@@ -38,6 +38,7 @@ script: !include scripts.yaml
 | `ha_en_wp_power` | `sensor.<shelly>_energy_meter_0_power` | Shelly |
 | `ha_ci_*` | `sensor.cistern_controller_zisterne_fill` … | ESPHome cistern controller (optional page) |
 | `ha_sun` | `sun.sun` | built-in — picks day/night backlight brightness |
+| `ha_mold_wall_rh` | `sensor.wandfeuchte_eg_max` | built-in **Min/Max** helper (type *max*) over the wall-surface humidity of the rooms to watch (any mold-risk sensor in %) — optional, drives the mold text of the air banner |
 
 The panel needs permission to call HA actions: Settings → Devices & Services →
 ESPHome → the panel → *Configure* → "Allow the device to perform Home Assistant actions".

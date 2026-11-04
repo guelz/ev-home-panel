@@ -54,7 +54,7 @@ substitutions:
   ha_en_grid_out_daily: sensor.dash_grid_export_energy_daily
   ha_en_house_daily: sensor.dash_house_consumption_energy_daily
   # YAML utility_meter on the Shelly ch0 hardware counter (utility_meter/waermepumpe.yaml).
-  # NOT sensor.wp_und_boiler_daily_energy — that old UI helper counts a vanished source, stays 0.
+  # NOT sensor.wp_und_boiler_daily_energy — that old UI helper (dead source) was deleted 2026-10-26.
   ha_en_wp_daily: sensor.daily_energy_warmepumpe
   # EV charged today — evcc (Warp3 meter), not the old Kia-cloud integral template.
   ha_en_ev_daily: sensor.evcc_heute_geladen
@@ -75,6 +75,9 @@ substitutions:
   ha_ci_fill: sensor.cistern_controller_zisterne_fill
   ha_ci_m3: sensor.cistern_controller_zisterne_m3
   ha_ci_usage: sensor.cistern_controller_zisterne_daily_usage
+  # Mold risk (air banner): highest wall-surface humidity of the rooms to watch,
+  # here an HA min_max "max" helper over the two EG mold sensors.
+  ha_mold_wall_rh: sensor.wandfeuchte_eg_max
   # ── binary_sensor ───────────────────────────────────────────────────────────
   ha_wb_cable: binary_sensor.warp3_2iw7_cable
   ha_wb_charging: binary_sensor.warp3_2iw7_charging
@@ -129,6 +132,7 @@ substitutions:
   scd40_altitude_m: "430"    # CO₂ altitude compensation — your installation altitude in m
   co2_warn_ppm: "1400"       # air banner ON >1400 ppm, OFF <1300 (−100 hysteresis)
   humidity_warn_pct: "70"    # air banner ON >=70 %, OFF <68 % (−2 hysteresis)
+  mold_warn_pct: "80"        # mold banner ON >=80 % wall RH, OFF <78 % (−2 hysteresis)
 
   # ─── Vehicle-specific UI ────────────────────────────────────────────────
   vehicle_section_title: "NIRO EV"
@@ -538,6 +542,10 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: mold_warn_on
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 sensor:
   - platform: sht4x
@@ -578,16 +586,31 @@ sensor:
       name: "${device_friendly} CO₂-Sensor Luftfeuchtigkeit"
       entity_category: diagnostic
 
+  # Wall-surface humidity from HA (mold risk) — third reason for the air banner.
+  - platform: homeassistant
+    id: mold_wall_rh
+    entity_id: $ha_mold_wall_rh
+    internal: true
+    on_value:
+      - script.execute: check_air_quality
+
 # refresh_radar_dot — toggles sb_radar_dot in sections/statusbar.yaml.
 # Lives next to the LD2412 binary_sensor that fires it.
 script:
   # Air-quality banner: ON CO2>1400/hum>=70, OFF <1300/<68 (hysteresis latches).
+  # Mold (HA wall RH, mold_warn_pct, −2 hysteresis) has priority over CO2/humidity:
+  # it is the one that needs acting on. NaN (HA not yet synced) keeps the latch.
   # NB rendered text uses "CO2" — font_status has no subscript-₂ glyph.
   - id: check_air_quality
     then:
       - lambda: |-
           float co2 = id(scd40_co2).state;
           float hum = id(sht41_humidity).state;
+          float mold = id(mold_wall_rh).state;
+          if (!std::isnan(mold)) {
+            if (mold >= ${mold_warn_pct}) id(mold_warn_on) = true;
+            else if (mold < ${mold_warn_pct} - 2) id(mold_warn_on) = false;
+          }
           if (!std::isnan(co2)) {
             if (co2 > ${co2_warn_ppm}) id(co2_warn_on) = true;
             else if (co2 < ${co2_warn_ppm} - 100) id(co2_warn_on) = false;
@@ -596,9 +619,11 @@ script:
             if (hum >= ${humidity_warn_pct}) id(hum_warn_on) = true;
             else if (hum < ${humidity_warn_pct} - 2) id(hum_warn_on) = false;
           }
-          if (id(co2_warn_on) || id(hum_warn_on)) {
+          if (id(mold_warn_on) || id(co2_warn_on) || id(hum_warn_on)) {
             char buf[64];
-            if (id(co2_warn_on) && id(hum_warn_on))
+            if (id(mold_warn_on))
+              snprintf(buf, sizeof(buf), "${txt_air_mold_fmt}", mold);
+            else if (id(co2_warn_on) && id(hum_warn_on))
               snprintf(buf, sizeof(buf), "${txt_air_both_fmt}", co2, hum);
             else if (id(co2_warn_on))
               snprintf(buf, sizeof(buf), "${txt_air_co2_fmt}", co2);

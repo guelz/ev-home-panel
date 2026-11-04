@@ -177,3 +177,6 @@ txt_air_co2_fmt: "Lüften — CO2 %.0f ppm"
 # args: %.0f
 # max 63 bytes
 txt_air_hum_fmt: "Lüften — Luftfeuchte %.0f%%"
+# args: %.0f
+# max 63 bytes
+txt_air_mold_fmt: "Lüften RH %.0f%% wegen Schimmelrisiko"

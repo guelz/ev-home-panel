@@ -35,7 +35,7 @@ Sign convention: grid **+** = import, battery **+** = charging; plus always draw
 moving waterline, litres, daily use, pump, last rain).
 
 **Every page**: status bar (HA / evcc / radar connection dots, clock), an air-quality
-banner (CO₂ / humidity), presence-based wake/dim with day/night brightness, beeps.
+banner (CO₂ / humidity, plus wall humidity from HA for mold risk), presence-based wake/dim with day/night brightness, beeps.
 
 ## Hardware
 
@@ -112,7 +112,7 @@ turns that into an error.
 | Cistern | `cistern_wl_{100,50,0}_{x,y}` | waterline position (px from the tank image's top-left) at 100 / 50 / 0 %, interpolated in between |
 | Display | `dim_timeout_s` | presence/touch timeout before dimming |
 | Assets | `asset_base` (from secrets), `icons_path` | |
-| Air banner | `co2_warn_ppm`, `humidity_warn_pct`, `scd40_altitude_m` | |
+| Air banner | `co2_warn_ppm`, `humidity_warn_pct`, `scd40_altitude_m`, `mold_warn_pct` (`"80"`) | mold text (`ha_mold_wall_rh`) wins over CO₂/humidity |
 | Colours | `paper`, `paper_tint`, `paper_edge`, `ink`, `ink_soft`, `ink_mute`, `ink_faint`, `warn_red`, `ok_green` | |
 
 ## Texts and translation
