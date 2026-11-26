@@ -3,7 +3,7 @@
 # page-dots centered, italic Crimson clock right.
 #
 # IDs driven by scripts:
-#   sb_ha_dot   — api on_client_connected (ha_entities.yaml) → $ok_green
+#   sb_ha_dot   — refresh_ha_dot (ha_entities.yaml): HA subscribed → $ok_green
 #   sb_evcc_dot — refresh_evcc_dot
 #   sb_radar_dot— refresh_radar_dot (device YAML)
 #   sb_clock    — refresh_clock
