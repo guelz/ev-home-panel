@@ -8,19 +8,40 @@
 #
 # Note: the device YAML's `api:` block (which carries encryption.key + services)
 # merges with the on_client_* triggers below. Both contribute different sub-keys
-# of `api:`, so there's no collision.
+# of `api:`, so there's no collision. Likewise `interval:`/`script:` lists merge.
 
+# HA-dot = "a client subscribed to entity states is connected" (api.connected
+# with state_subscription_only), re-evaluated on every connect/disconnect and
+# every 5 s. The old version painted green/faint per connect/disconnect EVENT,
+# so a second client (Device Builder log viewer after a flash) closing turned
+# the dot faint although HA was still connected.
+#  - on_client_disconnected fires after the client is removed → exact at once.
+#  - on_client_connected fires at authentication, BEFORE HA subscribes to
+#    states → the 5 s interval picks the subscription up.
+#  - Caveat (docs): since 2026.4 the Device Builder log viewer also subscribes to
+#    states, so with HA down but a log window open the dot still shows green.
 api:
-  # Single-client assumption: HA is the only client that talks to this panel.
-  # If multiple clients connect simultaneously, the dot may briefly flip to faint
-  # when one drops while HA is still present — fix later by querying
-  # api::global_api_server->is_connected() from a refresh script if it matters.
   on_client_connected:
-    - lambda: |-
-        lv_obj_set_style_bg_color(id(sb_ha_dot), lv_color_hex($ok_green), 0);
+    - script.execute: refresh_ha_dot
   on_client_disconnected:
-    - lambda: |-
-        lv_obj_set_style_bg_color(id(sb_ha_dot), lv_color_hex($ink_faint), 0);
+    - script.execute: refresh_ha_dot
+
+interval:
+  - interval: 5s
+    then:
+      - script.execute: refresh_ha_dot
+
+script:
+  - id: refresh_ha_dot
+    then:
+      - if:
+          condition:
+            api.connected:
+              state_subscription_only: true
+          then:
+            - lambda: 'lv_obj_set_style_bg_color(id(sb_ha_dot), lv_color_hex($ok_green), 0);'
+          else:
+            - lambda: 'lv_obj_set_style_bg_color(id(sb_ha_dot), lv_color_hex($ink_faint), 0);'
 
 sensor:
   # Ladeplan-Ziel (evcc effectivePlanSoc via HA bridge): > 0 = Plan aktiv →

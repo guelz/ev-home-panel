@@ -33,7 +33,7 @@ script: !include scripts.yaml
 | Panel substitution | Example entity | Integration |
 |--------------------|----------------|-------------|
 | `ha_wb_cable`, `ha_wb_charging`, `ha_wb_error`, `ha_wb_power` | `binary_sensor.warp3_<id>_cable` …, `sensor.warp3_<id>_powernow` (W) | WARP3 charger, MQTT + HA discovery enabled in its web UI |
-| `ha_range_sensor`, `ha_soc_sensor`, `ha_lock_entity`, `ha_climate_entity`, `ha_lock_windows_*_button` | `sensor.niro_ev_range`, `sensor.niro_ev_battery_level`, `lock.niro_door_lock`, `climate.niro_climate_control`, `button.*_open_all_windows` | kia_uvo (Kia / Hyundai) — any car integration with SoC + range works |
+| `ha_range_sensor`, `ha_soc_sensor`, `ha_lock_entity`, `ha_climate_entity`, `ha_lock_windows_*_button` | `sensor.niro_ev_range`, `sensor.niro_ev_battery_level`, `lock.niro_door_lock`, `switch.niro_climate` (or a `climate.*` entity — the panel uses `homeassistant.turn_on/off`), `button.*_open_all_windows` | kia_uvo (Kia / Hyundai) — any car integration with SoC + range works |
 | `ha_en_batt_soc` | `sensor.batteries_state_of_capacity` | huawei_solar |
 | `ha_en_wp_power` | `sensor.<shelly>_energy_meter_0_power` | Shelly |
 | `ha_ci_*` | `sensor.cistern_controller_zisterne_fill` … | ESPHome cistern controller (optional page) |
