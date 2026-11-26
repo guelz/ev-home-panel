@@ -114,7 +114,8 @@ substitutions:
   # ── write-only (homeassistant.action targets) ───────────────────────────────
   ha_lock_windows_open_button: button.parkplatz_niro_open_all_windows
   ha_lock_windows_close_button: button.parkplatz_niro_close_all_windows
-  ha_climate_entity: climate.niro_climate_control
+  # Pre-conditioning on/off via homeassistant.turn_on/turn_off (switch or climate).
+  ha_climate_entity: switch.niro_climate
   # "Bis morgen früh voll laden": HA script that sets (soc > 0) or deletes
   # (soc 0) the evcc charge plan — it holds the evcc vehicle name and computes
   # the next occurrence of the time. Target and time as in the evcc dialog.

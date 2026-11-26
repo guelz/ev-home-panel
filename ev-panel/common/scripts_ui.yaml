@@ -3,7 +3,7 @@
 #
 # Required substitutions:
 #   ${dim_timeout_s}             — seconds with no presence before backlight dims
-#   ${ha_climate_entity}         — HA climate entity_id (climate.set_hvac_mode)
+#   ${ha_climate_entity}         — HA switch/climate entity (homeassistant.turn_on/off)
 
 script:
 
@@ -68,13 +68,13 @@ script:
                 id: backlight
                 brightness: 30%
 
-  # ─── Climate border timer (15 min) — resets the green border + local state. ──
-  # The car runs its own 15-min climate timer and shuts off by itself, so we do
+  # ─── Climate border timer (30 min) — resets the green border + local state. ──
+  # The car runs its own ~30-min climate timer and shuts off by itself, so we do
   # NOT send turn_off here. mode: restart → re-taps push the deadline out.
   - id: climate_border_timer
     mode: restart
     then:
-      - delay: 15min
+      - delay: 30min
       - lambda: |-
           id(climate_active) = false;
           lv_obj_set_style_border_color(id(precond_btn), lv_color_hex($ink), 0);

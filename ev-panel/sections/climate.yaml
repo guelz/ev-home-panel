@@ -2,14 +2,18 @@
 # Paper-tint band, paper-fill button, 3px ink border that flips to $ok_green
 # while active. Border colour is the only "I pressed it" feedback.
 #
-# Tapping ON sets the HA climate entity to hvac_mode "cool"; OFF sets "off".
-# (The car does the actual pre-conditioning; heat/cool are functionally
-# equivalent here, so we use cool.) A 15-min climate_border_timer (scripts_ui.yaml)
-# only resets the green border + local climate_active state — it does NOT send
-# "off", because the car stops pre-conditioning on its own after ~15 min.
+# Tapping ON calls homeassistant.turn_on on the entity, OFF homeassistant.turn_off.
+# That works for a switch.* (kia_uvo's switch.<car>_climate) and for a climate.*
+# entity alike — no hvac_mode guessing (kia_uvo's climate entity only accepts
+# off/auto, so the old hvac_mode "cool" was rejected by HA and did nothing).
+# The car does the actual pre-conditioning and stops by itself after ~30 min
+# (measured 2026-11-26). A 30-min climate_border_timer (scripts_ui.yaml) only
+# resets the green border + local climate_active state — it does NOT send "off".
+# Deliberately not tied to the HA state: kia_uvo learns about changes (e.g. off
+# in the Kia app) only via the slow Kia cloud poll.
 #
 # Required substitutions:
-#   ${ha_climate_entity}  — HA climate entity (e.g. climate.niro_climate_control)
+#   ${ha_climate_entity}  — HA switch or climate entity (e.g. switch.niro_climate)
 
 obj:
   id: sec_climate
@@ -69,18 +73,16 @@ obj:
                     id(climate_active) = true;
                     lv_obj_set_style_border_color(id(precond_btn), lv_color_hex($ok_green), 0);
                 - homeassistant.action:
-                    action: climate.set_hvac_mode
+                    action: homeassistant.turn_on
                     data:
                       entity_id: ${ha_climate_entity}
-                      hvac_mode: cool
                 - script.execute: climate_border_timer
               else:                     # ON → OFF
                 - lambda: |-
                     id(climate_active) = false;
                     lv_obj_set_style_border_color(id(precond_btn), lv_color_hex($ink), 0);
                 - homeassistant.action:
-                    action: climate.set_hvac_mode
+                    action: homeassistant.turn_off
                     data:
                       entity_id: ${ha_climate_entity}
-                      hvac_mode: 'off'      # quote: bare off is YAML boolean false
                 - script.stop: climate_border_timer
